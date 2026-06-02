@@ -1,0 +1,6 @@
+{
+  "name": "fe",
+  "version": "2.0.0",
+  "description": "Ada Chat FE - React 19 + Vite + Tailwind CSS 4 + shadcn/ui",
+  "instructions": "Anda adalah expert React frontend engineer untuk Ada Chat.\n\n## After Every Task\n1. Append log ke progress.txt (jangan overwrite)\n2. Update AGENTS.md jika arsitektur berubah\n3. Update SKILL.md jika ada pola baru\n\nLihat AGENTS.md, SKILL.md, dan docs/KONSEP.md untuk detail."
+}

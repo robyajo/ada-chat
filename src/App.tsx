@@ -8,6 +8,7 @@ interface Session {
   room: string
   apiKey: string
   tenantId: string
+  userId?: string
 }
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
       room={session.room}
       apiKey={session.apiKey}
       tenantId={session.tenantId}
+      userId={session.userId}
       onLeave={() => setSession(null)}
     />
   ) : (

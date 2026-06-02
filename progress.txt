@@ -1,0 +1,11 @@
+# Ada Chat FE — Progress Log
+
+## [2026-06-03] Initial setup — Removed direct Patuih SDK usage
+- Removed `patuih-sdk` from dependencies
+- Created `src/services/api.ts` — REST client with JWT auto-refresh
+- Created `src/services/socket.ts` — WebSocket manager (connectChat, joinRoom, sendMessage)
+- Refactored `components/Lobby.tsx` — Login/Register flow + API key validation via backend
+- Refactored `components/Chat.tsx` — Connect to backend WS instead of direct Patuih Gateway
+- Updated `App.tsx` — Added userId to Session interface
+- Updated `.env.example` — Simplified to only `VITE_API_URL`
+- Passed `npm run typecheck` and `npm run lint` (no new errors in our code)
