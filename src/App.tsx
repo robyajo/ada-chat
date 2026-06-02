@@ -1,21 +1,39 @@
-import { Button } from "@/components/ui/button"
+import { useState, useEffect } from "react"
+import Lobby from "./components/Lobby"
+import Chat from "./components/Chat"
+import "./App.css"
 
-export function App() {
-  return (
-    <div className="flex min-h-svh p-6">
-      <div className="flex max-w-md min-w-0 flex-col gap-4 text-sm leading-loose">
-        <div>
-          <h1 className="font-medium">Project ready!</h1>
-          <p>You may now add components and start building.</p>
-          <p>We&apos;ve already added the button component for you.</p>
-          <Button className="mt-2">Button</Button>
-        </div>
-        <div className="font-mono text-xs text-muted-foreground">
-          (Press <kbd>d</kbd> to toggle dark mode)
-        </div>
-      </div>
-    </div>
-  )
+interface Session {
+  name: string
+  room: string
+  apiKey: string
+  tenantId: string
 }
 
-export default App
+export default function App() {
+  const [session, setSession] = useState<Session | null>(() => {
+    const cached = localStorage.getItem("chat_session")
+    if (cached) { try { return JSON.parse(cached) } catch { return null } }
+    return null
+  })
+
+  useEffect(() => {
+    if (session) {
+      localStorage.setItem("chat_session", JSON.stringify(session))
+    } else {
+      localStorage.removeItem("chat_session")
+    }
+  }, [session])
+
+  return session ? (
+    <Chat
+      user={session.name}
+      room={session.room}
+      apiKey={session.apiKey}
+      tenantId={session.tenantId}
+      onLeave={() => setSession(null)}
+    />
+  ) : (
+    <Lobby onEnter={(s) => setSession(s)} />
+  )
+}
