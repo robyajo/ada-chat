@@ -16,6 +16,7 @@ npm ci
 echo "[3/4] Building..."
 npm run build
 
-
+echo "[4/4] Restarting PM2 API..."
+pm2 restart ada-chat-api
 
 echo "=== Done ==="
