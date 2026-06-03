@@ -20,7 +20,7 @@ export default function Message({ msg, isOwn, getColor }: { msg: Record<string, 
     return (
       <div className="flex justify-center my-1">
         <span className="px-4 py-1 bg-muted text-xs text-muted-foreground font-bold uppercase tracking-wider rounded-full">
-          {m.text}
+          {typeof m.text === "string" ? m.text : JSON.stringify(m.text)}
         </span>
       </div>
     )
@@ -77,7 +77,7 @@ export default function Message({ msg, isOwn, getColor }: { msg: Record<string, 
             : "bg-muted rounded-bl-sm"
         }`}>
           <div className="flex items-center gap-2 mb-1">
-            {!isOwn && <span className="text-xs font-bold" style={{ color: getColor(m.sender) }}>{m.sender}</span>}
+            {!isOwn && <span className="text-xs font-bold" style={{ color: getColor(m.sender) }}>{typeof m.sender === "string" ? m.sender : JSON.stringify(m.sender)}</span>}
             <span className={`text-xs ml-auto ${isOwn ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
               {new Date(m.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
             </span>

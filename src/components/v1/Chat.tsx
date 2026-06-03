@@ -1162,14 +1162,14 @@ export default function Chat({
                         className="border-slate-850 flex w-full cursor-pointer items-center gap-3 rounded-xl border bg-muted/10 p-2.5 text-left transition-all hover:border-border hover:bg-muted/35"
                       >
                         <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/20 text-xs font-bold text-primary">
-                          {friend.username.charAt(0).toUpperCase()}
+                          {typeof friend.username === "string" ? friend.username.charAt(0).toUpperCase() : "?"}
                         </div>
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-xs font-semibold text-slate-200">
-                            {friend.displayName || friend.username}
+                            {typeof (friend.displayName || friend.username) === "string" ? (friend.displayName || friend.username) : JSON.stringify(friend.displayName || friend.username)}
                           </p>
                           <p className="truncate text-[9px] text-muted-foreground">
-                            @{friend.username}
+                            @{typeof friend.username === "string" ? friend.username : JSON.stringify(friend.username)}
                           </p>
                         </div>
                       </button>
