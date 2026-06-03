@@ -24,7 +24,7 @@ Anda adalah **React Frontend Engineer** untuk **Ada Chat** — aplikasi chat rea
 
 ```
 src/
-  main.tsx                    — Entry point
+  main.tsx                    — Entry point (BrowserRouter with admin + app routes)
   App.tsx                     — Root component: auth + session management, OAuth route
   App.css                     — Global styles
   index.css                   — Tailwind imports
@@ -36,14 +36,21 @@ src/
     use-auth.ts               — (TBD) Auth hook
   components/
     ui/                       — 55 shadcn/ui primitives
+    admin-guard.tsx           — Route guard for admin pages (checks adminAccessToken)
     Lobby.tsx                 — Auth flow + Join / Create room screen
     Chat.tsx                  — Main chat view (WebSocket messaging)
     Message.tsx               — Message bubble component
     OAuthCallback.tsx         — Handle OAuth redirect (accessToken dari URL → localStorage → redirect /)
     theme-provider.tsx        — Dark/light theme provider
     Settings.tsx              — (TBD) Settings: API Key, profile
+  pages/
+    admin/
+      AdminLogin.tsx          — Admin login page (/admin/auth/login)
+      AdminDashboard.tsx      — Admin dashboard (/admin)
+      AdminSettings.tsx       — Admin settings with AppConfig CRUD (/admin/settings)
   services/
     api.ts                    — REST API client (JWT auth, auto-refresh)
+    admin-api.ts              — Admin REST API client (separate adminAccessToken)
     socket.ts                 — Socket.IO connection manager
 ```
 
@@ -57,6 +64,18 @@ src/
 4. **Chat** — Connect ke **Backend WebSocket** (`/chat`), bukan langsung ke Patuih
 5. **Online Users** — Lihat siapa yang online di room
 6. **Typing Indicator** — Lihat siapa yang sedang mengetik
+
+### Admin Routes
+
+```
+/admin/auth/login  → AdminLogin.tsx (login terpisah, token disimpan sebagai adminAccessToken)
+/admin             → AdminDashboard.tsx (stats cards, recent users table)
+/admin/settings    → AdminSettings.tsx (CRUD AppConfig — API keys disimpan di DB)
+```
+
+- Semua admin route dilindungi `AdminGuard` — redirect ke `/admin/auth/login` jika token tidak ada
+- Auth & token admin terpisah dari user biasa (`adminAccessToken` / `adminRefreshToken`)
+- Admin users di-seeder di backend, login via endpoint `/api/v1/auth/login` yang sama dengan validasi role ADMIN
 
 ### Auth Flow
 

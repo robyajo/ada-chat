@@ -72,3 +72,19 @@
 ## [2026-06-03] Database persistence — load messages from backend
 - Chat.tsx: tambah useEffect fetch GET /api/v1/chat/messages/:roomId on room change
 - Messages dari backend diformat dan di-set ke state messages
+
+## [2026-06-04] Admin Dashboard + Settings with AppConfig
+- BE: Added `prisma/models/config.prisma` — AppConfig model (key-value store for global config)
+- BE: Created `src/modules/admin/` — AdminModule, AdminController, AdminService
+  - GET /api/v1/admin/dashboard — stats (users, messages, rooms, active today, login logs, contacts)
+  - GET/PUT/DELETE /api/v1/admin/config/:key — CRUD app config
+  - Semua endpoint dilindungi @Roles(ADMIN)
+  - Migrasi `add_app_config` sudah ada
+- FE: Created `src/services/admin-api.ts` — Admin REST API client (separate admin token)
+- FE: Created `src/pages/admin/AdminLogin.tsx` — Admin login page (/admin/auth/login)
+- FE: Created `src/pages/admin/AdminDashboard.tsx` — Dashboard with stat cards + recent users table
+- FE: Created `src/pages/admin/AdminSettings.tsx` — Settings with AppConfig CRUD dialog
+- FE: Created `src/components/admin-guard.tsx` — Route guard for admin pages
+- FE: Updated `src/main.tsx` — BrowserRouter with admin routes + AdminGuard
+- Updated AGENTS.md (FE & BE) — admin module structure + routing docs
+- Passed `npm run typecheck` and `npm run lint` (no new errors)

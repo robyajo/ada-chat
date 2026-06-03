@@ -3,9 +3,6 @@ import Lobby from "./components/Lobby"
 import Chat from "./components/Chat"
 import OAuthCallback from "./components/OAuthCallback"
 import { api, clearTokens } from "@/services/api"
-import "./App.css"
-
-const SESSION_KEY = "chat_session"
 
 export interface AuthUser {
   id: string
@@ -20,47 +17,41 @@ interface Session {
   userId?: string
 }
 
-function loadSession(): Session | null {
-  try {
-    const raw = localStorage.getItem(SESSION_KEY)
-    if (raw) return JSON.parse(raw)
-  } catch { /* ignore */ }
-  return null
-}
-
-function saveSession(s: Session | null) {
-  if (s) localStorage.setItem(SESSION_KEY, JSON.stringify(s))
-  else localStorage.removeItem(SESSION_KEY)
-}
-
-function getInitialAuthReady(): boolean {
-  return !localStorage.getItem("accessToken")
-}
-
 export default function App() {
-  const [session, setSession] = useState<Session | null>(loadSession)
+  const [session, setSession] = useState<Session | null>(null)
   const [authUser, setAuthUser] = useState<AuthUser | null>(null)
-  const [authReady, setAuthReady] = useState(getInitialAuthReady)
+  const [authReady, setAuthReady] = useState(false)
 
   const isOAuthPath = window.location.pathname === "/oauth/callback"
+  const hasToken = !!localStorage.getItem("accessToken")
 
   useEffect(() => {
     if (isOAuthPath) return
-    const at = localStorage.getItem("accessToken")
-    if (!at) return
+    if (!hasToken) {
+      setAuthReady(true)
+      return
+    }
     let cancelled = false
-    api.get<AuthUser>("/api/v1/auth/me")
-      .then((user) => { if (!cancelled) setAuthUser(user) })
-      .catch(() => { if (!cancelled) clearTokens() })
-      .finally(() => { if (!cancelled) setAuthReady(true) })
-    return () => { cancelled = true }
+    api
+      .get<AuthUser>("/api/v1/auth/me")
+      .then((user) => {
+        if (!cancelled) setAuthUser(user)
+      })
+      .catch(() => {
+        if (!cancelled) clearTokens()
+      })
+      .finally(() => {
+        if (!cancelled) setAuthReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [isOAuthPath])
 
   useEffect(() => {
     const handler = () => {
       setAuthUser(null)
       setSession(null)
-      saveSession(null)
     }
     window.addEventListener("auth:expired", handler)
     return () => window.removeEventListener("auth:expired", handler)
@@ -86,9 +77,12 @@ export default function App() {
         room={session.room}
         userId={session.userId}
         authUser={authUser}
-        onLeave={() => { setSession(null); saveSession(null) }}
-        onEnterRoom={(s) => { setSession(s); saveSession(s) }}
-        onLogout={() => { setAuthUser(null); clearTokens() }}
+        onLeave={() => setSession(null)}
+        onEnterRoom={(s) => setSession(s)}
+        onLogout={() => {
+          setAuthUser(null)
+          clearTokens()
+        }}
       />
     )
   }
@@ -102,8 +96,11 @@ export default function App() {
         userId={authUser.id}
         authUser={authUser}
         onLeave={() => {}}
-        onEnterRoom={(s) => { setSession(s); saveSession(s) }}
-        onLogout={() => { setAuthUser(null); clearTokens() }}
+        onEnterRoom={(s) => setSession(s)}
+        onLogout={() => {
+          setAuthUser(null)
+          clearTokens()
+        }}
       />
     )
   }
@@ -113,8 +110,11 @@ export default function App() {
     <Lobby
       authUser={authUser}
       onAuthSuccess={(user) => setAuthUser(user)}
-      onEnter={(s) => { setSession(s); saveSession(s) }}
-      onLogout={() => { setAuthUser(null); clearTokens() }}
+      onEnter={(s) => setSession(s)}
+      onLogout={() => {
+        setAuthUser(null)
+        clearTokens()
+      }}
     />
   )
 }
