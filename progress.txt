@@ -9,3 +9,27 @@
 - Updated `App.tsx` — Added userId to Session interface
 - Updated `.env.example` — Simplified to only `VITE_API_URL`
 - Passed `npm run typecheck` and `npm run lint` (no new errors in our code)
+
+## [2026-06-03] Auth flow refactor — Login -> Lobby (room selection), not directly to Chat
+- Created `components/OAuthCallback.tsx` — handles Google/Discord OAuth redirect from backend
+  - Reads accessToken & refreshToken from URL search params
+  - Saves tokens via setTokens() to localStorage
+  - Redirects to / on success, shows error on failure
+- Refactored `App.tsx` — auth state separated from chat session
+  - Detects /oauth/callback path -> renders OAuthCallback
+  - On mount, checks localStorage for token -> fetches /api/v1/auth/me for authUser
+  - Three render states: OAuthCallback / Chat (when session exists) / Lobby
+  - saveSession/loadSession helpers for chat_session localStorage
+- Refactored `components/Lobby.tsx` — new flow: login -> room selection -> chat
+  - New props: authUser, onAuthSuccess, onLogout (replaces standalone auth logic)
+  - Auth form shown only when not authenticated
+  - After auth success -> stays on Lobby showing Room Selection (Join/Create buttons)
+  - Patuih key setup shown after login if user has no key, then back to Room Selection
+  - Logout button in Room Selection view
+  - Only calls onEnter() when user actually joins or creates a room
+- Updated AGENTS.md — structure + auth flow diagram
+- Updated SKILL.md — App.tsx pattern, Lobby new state machine, OAuthCallback pattern, Auth section
+## [2026-06-03] Fix session expiry — auto-redirect ke login saat token expired
+- services/api.ts: clearTokens() sekarang dispatch CustomEvent('auth:expired')
+- App.tsx: listen uth:expired → clear authUser + session → user lgsg liat login form
+

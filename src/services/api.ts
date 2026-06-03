@@ -40,7 +40,8 @@ async function request<T = unknown>(
       }
       const text = await retry.text()
       try {
-        return JSON.parse(text)
+        const json = JSON.parse(text)
+        return (json.success === true && json.data !== undefined ? json.data : json) as T
       } catch {
         return text as unknown as T
       }
@@ -65,7 +66,8 @@ async function request<T = unknown>(
   const text = await res.text()
   if (!text) return undefined as unknown as T
   try {
-    return JSON.parse(text)
+    const json = JSON.parse(text)
+    return (json.success === true && json.data !== undefined ? json.data : json) as T
   } catch {
     return text as unknown as T
   }
@@ -82,8 +84,9 @@ async function attemptRefresh(): Promise<boolean> {
     })
     if (!res.ok) return false
     const data = await res.json()
-    localStorage.setItem("accessToken", data.tokens?.accessToken ?? data.accessToken ?? "")
-    localStorage.setItem("refreshToken", data.tokens?.refreshToken ?? data.refreshToken ?? "")
+    const tokenData = data.data ?? data
+    localStorage.setItem("accessToken", tokenData.accessToken ?? "")
+    localStorage.setItem("refreshToken", tokenData.refreshToken ?? "")
     return true
   } catch {
     return false
@@ -107,4 +110,5 @@ export function setTokens(accessToken: string, refreshToken: string) {
 export function clearTokens() {
   localStorage.removeItem("accessToken")
   localStorage.removeItem("refreshToken")
+  window.dispatchEvent(new CustomEvent("auth:expired"))
 }

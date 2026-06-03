@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { api } from "@/services/api"
+import { api, setTokens } from "@/services/api"
 import {
   Card,
   CardHeader,
@@ -21,21 +21,29 @@ function genId() {
   )
 }
 
+interface AuthUser {
+  id: string
+  username: string
+  displayName: string | null
+  pin: string
+}
+
 interface Session {
   name: string
   room: string
   apiKey: string
   tenantId: string
-  accessToken: string
-  refreshToken: string
-  userId: string
+  userId?: string
 }
 
-export default function Lobby({
-  onEnter,
-}: {
+interface LobbyProps {
+  authUser: AuthUser | null
+  onAuthSuccess: (user: AuthUser) => void
   onEnter: (s: Session) => void
-}) {
+  onLogout: () => void
+}
+
+export default function Lobby({ authUser, onAuthSuccess, onEnter, onLogout }: LobbyProps) {
   const [tab, setTab] = useState<"join" | "create" | null>(null)
   const [name, setName] = useState(
     () => localStorage.getItem("chat_name") || ""
@@ -59,7 +67,32 @@ export default function Lobby({
   const [password, setPassword] = useState("")
   const [email, setEmail] = useState("")
   const [isRegister, setIsRegister] = useState(false)
-  const [authMode, setAuthMode] = useState<"login" | "patuih">("login")
+  const [phone, setPhone] = useState("")
+  const [otp, setOtp] = useState("")
+  const [otpSent, setOtpSent] = useState(false)
+  const [useEmailReg, setUseEmailReg] = useState(true)
+  const [showPatuihSetup, setShowPatuihSetup] = useState(false)
+  const [searchPin, setSearchPin] = useState("")
+  const [searchingPin, setSearchingPin] = useState(false)
+  const [pinResult, setPinResult] = useState<{ username: string; displayName: string | null } | null>(null)
+  const [pinError, setPinError] = useState("")
+
+  const isAuthenticated = !!authUser
+
+  const handleSearchPin = async () => {
+    if (searchPin.length !== 6) return
+    setSearchingPin(true)
+    setPinResult(null)
+    setPinError("")
+    try {
+      const user = await api.get<{ username: string; displayName: string | null }>(`/api/v1/auth/find-by-pin?pin=${searchPin}`)
+      setPinResult(user)
+    } catch (err: unknown) {
+      setPinError(err instanceof Error ? err.message : "User not found")
+    } finally {
+      setSearchingPin(false)
+    }
+  }
 
   const handleAuth = async () => {
     setError("")
@@ -76,6 +109,7 @@ export default function Lobby({
           id: string;
           displayName: string | null;
           username: string;
+          pin: string;
           patuihApiKey: string | null;
           patuihTenantId: string | null;
         };
@@ -85,22 +119,51 @@ export default function Lobby({
 
       setTokens(accessToken, refreshToken)
       localStorage.setItem("chat_name", userData.displayName || userData.username)
+      onAuthSuccess({ id: userData.id, username: userData.username, displayName: userData.displayName, pin: userData.pin })
 
-      if (userData.patuihApiKey && userData.patuihTenantId) {
-        onEnter({
-          name: userData.displayName || userData.username,
-          room: "",
-          apiKey: userData.patuihApiKey,
-          tenantId: userData.patuihTenantId,
-          accessToken,
-          refreshToken,
-          userId: userData.id,
-        })
-      } else {
-        setAuthMode("patuih")
+      if (!userData.patuihApiKey || !userData.patuihTenantId) {
+        setShowPatuihSetup(true)
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Authentication failed")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handlePhoneRegister = async () => {
+    setError("")
+    setLoading(true)
+    try {
+      await api.post("/api/v1/auth/register-phone", { phone, password, confirmPassword: password })
+      setOtpSent(true)
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to send OTP")
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleVerifyOtp = async () => {
+    setError("")
+    setLoading(true)
+    try {
+      const data = await api.post<{
+        tokens: { accessToken: string; refreshToken: string };
+        user: { id: string; displayName: string | null; username: string; pin: string; patuihApiKey: string | null; patuihTenantId: string | null };
+      }>("/api/v1/auth/verify-otp", { phone, otp })
+      const { accessToken, refreshToken } = data.tokens
+      const userData = data.user
+
+      setTokens(accessToken, refreshToken)
+      localStorage.setItem("chat_name", userData.displayName || userData.username)
+      onAuthSuccess({ id: userData.id, username: userData.username, displayName: userData.displayName, pin: userData.pin })
+
+      if (!userData.patuihApiKey || !userData.patuihTenantId) {
+        setShowPatuihSetup(true)
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Verification failed")
     } finally {
       setLoading(false)
     }
@@ -110,19 +173,11 @@ export default function Lobby({
     setError("")
     setLoading(true)
     try {
-      const data = await api.post<{ tenantId: string; message: string }>("/api/v1/chat/patuih-key", { apiKey })
+      await api.post<{ tenantId: string; message: string }>("/api/v1/chat/patuih-key", { apiKey })
       const n = name.trim() || "User"
       localStorage.setItem("chat_name", n)
       localStorage.setItem("chat_key", apiKey)
-      onEnter({
-        name: n,
-        room: "",
-        apiKey,
-        tenantId: data.tenantId,
-        accessToken: localStorage.getItem("accessToken") ?? "",
-        refreshToken: localStorage.getItem("refreshToken") ?? "",
-        userId: "",
-      })
+      setShowPatuihSetup(false)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save API key")
     } finally {
@@ -170,7 +225,6 @@ export default function Lobby({
         return
       }
 
-      // Save API key to backend first
       const keyResult = await api.post<{ tenantId: string }>("/api/v1/chat/patuih-key", { apiKey: actualApiKey })
       actualTenantId = actualTenantId || keyResult.tenantId
 
@@ -182,9 +236,7 @@ export default function Lobby({
         room: actualRoom,
         apiKey: actualApiKey,
         tenantId: actualTenantId,
-        accessToken: localStorage.getItem("accessToken") ?? "",
-        refreshToken: localStorage.getItem("refreshToken") ?? "",
-        userId: "",
+        userId: authUser?.id ?? "",
       })
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to join room")
@@ -216,9 +268,7 @@ export default function Lobby({
         room: r,
         apiKey: k,
         tenantId: keyResult.tenantId,
-        accessToken: localStorage.getItem("accessToken") ?? "",
-        refreshToken: localStorage.getItem("refreshToken") ?? "",
-        userId: "",
+        userId: authUser?.id ?? "",
       })
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to create room")
@@ -227,12 +277,8 @@ export default function Lobby({
     }
   }
 
-  function setTokens(accessToken: string, refreshToken: string) {
-    localStorage.setItem("accessToken", accessToken)
-    localStorage.setItem("refreshToken", refreshToken)
-  }
-
-  if (authMode === "login") {
+  // --- Auth form (show when not authenticated) ---
+  if (!isAuthenticated && !showPatuihSetup) {
     return (
       <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#05070a] p-4">
         <div className="pointer-events-none absolute top-1/4 left-1/4 h-[350px] w-[350px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/10 blur-3xl" />
@@ -257,46 +303,96 @@ export default function Lobby({
             </CardDescription>
           </CardHeader>
           <CardContent className="flex flex-col gap-4 px-6 pt-4 pb-6">
-            <div className="space-y-2">
-              <Label htmlFor="auth-username" className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Username</Label>
-              <Input id="auth-username" className="h-11 rounded-xl border-slate-800/80 bg-slate-950/45 text-white placeholder-slate-500" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="your_username" />
-            </div>
-            {isRegister && (
-              <div className="space-y-2">
-                <Label htmlFor="auth-email" className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Email</Label>
-                <Input id="auth-email" type="email" className="h-11 rounded-xl border-slate-800/80 bg-slate-950/45 text-white placeholder-slate-500" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
-              </div>
+            {otpSent ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="auth-otp" className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">OTP Code</Label>
+                  <Input id="auth-otp" className="h-11 rounded-xl border-slate-800/80 bg-slate-950/45 text-white placeholder-slate-500" value={otp} onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6 digit code" />
+                </div>
+                <Button className="w-full h-11 rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500" onClick={handleVerifyOtp} disabled={loading || otp.length !== 6}>
+                  {loading ? "..." : "Verify & Register"}
+                </Button>
+              </>
+            ) : (
+              <>
+                {!isRegister ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label htmlFor="auth-username" className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Username</Label>
+                      <Input id="auth-username" className="h-11 rounded-xl border-slate-800/80 bg-slate-950/45 text-white placeholder-slate-500" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="your_username" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="auth-password" className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Password</Label>
+                      <Input id="auth-password" type="password" className="h-11 rounded-xl border-slate-800/80 bg-slate-950/45 text-white placeholder-slate-500" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 8 characters" />
+                    </div>
+                    <div className="flex gap-2">
+                      <a href={`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/v1/auth/google`} className="flex-1">
+                        <Button type="button" variant="outline" className="w-full h-11 rounded-xl border-slate-800 bg-slate-950/45 text-slate-300 hover:bg-slate-800 hover:text-white">Google</Button>
+                      </a>
+                    </div>
+                    <Button className="w-full h-11 rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500" onClick={handleAuth} disabled={loading}>
+                      {loading ? "..." : "Login"}
+                    </Button>
+                    <p className="text-center text-xs text-slate-500">
+                      Don't have an account?{" "}
+                      <button className="text-indigo-400 hover:underline" onClick={() => { setIsRegister(true); setError("") }}>
+                        Register
+                      </button>
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="flex gap-2">
+                      <Button variant={useEmailReg ? "default" : "outline"} size="sm" className="flex-1 h-9 rounded-xl text-xs font-bold" onClick={() => setUseEmailReg(true)}>Email</Button>
+                      <Button variant={!useEmailReg ? "default" : "outline"} size="sm" className="flex-1 h-9 rounded-xl text-xs font-bold" onClick={() => setUseEmailReg(false)}>Phone</Button>
+                    </div>
+                    {useEmailReg ? (
+                      <>
+                        <div className="space-y-2">
+                          <Label htmlFor="auth-username" className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Username</Label>
+                          <Input id="auth-username" className="h-11 rounded-xl border-slate-800/80 bg-slate-950/45 text-white placeholder-slate-500" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="your_username" />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="auth-email" className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Email</Label>
+                          <Input id="auth-email" type="email" className="h-11 rounded-xl border-slate-800/80 bg-slate-950/45 text-white placeholder-slate-500" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="space-y-2">
+                        <Label htmlFor="auth-phone" className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Phone Number</Label>
+                        <Input id="auth-phone" className="h-11 rounded-xl border-slate-800/80 bg-slate-950/45 text-white placeholder-slate-500" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+628123456789" />
+                      </div>
+                    )}
+                    <div className="space-y-2">
+                      <Label htmlFor="auth-password" className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Password</Label>
+                      <Input id="auth-password" type="password" className="h-11 rounded-xl border-slate-800/80 bg-slate-950/45 text-white placeholder-slate-500" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 8 characters" />
+                    </div>
+                    <Button className="w-full h-11 rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500" onClick={useEmailReg ? handleAuth : handlePhoneRegister} disabled={loading}>
+                      {loading ? "..." : useEmailReg ? "Register" : "Send OTP"}
+                    </Button>
+                    <p className="text-center text-xs text-slate-500">
+                      Already have an account?{" "}
+                      <button className="text-indigo-400 hover:underline" onClick={() => { setIsRegister(false); setError("") }}>
+                        Login
+                      </button>
+                    </p>
+                  </>
+                )}
+              </>
             )}
-            <div className="space-y-2">
-              <Label htmlFor="auth-password" className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Password</Label>
-              <Input id="auth-password" type="password" className="h-11 rounded-xl border-slate-800/80 bg-slate-950/45 text-white placeholder-slate-500" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Min. 8 characters" />
-            </div>
-            <div className="flex gap-2">
-              <a href={`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/v1/auth/google`} className="flex-1">
-                <Button type="button" variant="outline" className="w-full h-11 rounded-xl border-slate-800 bg-slate-950/45 text-slate-300 hover:bg-slate-800 hover:text-white">Google</Button>
-              </a>
-            </div>
             {error && (
               <Alert variant="destructive" className="rounded-xl border-rose-500/20 bg-rose-500/10 text-rose-400">
                 <AlertDescription className="text-xs font-semibold">{error}</AlertDescription>
               </Alert>
             )}
-            <Button className="w-full h-11 rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500" onClick={handleAuth} disabled={loading}>
-              {loading ? "..." : isRegister ? "Register" : "Login"}
-            </Button>
-            <p className="text-center text-xs text-slate-500">
-              {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
-              <button className="text-indigo-400 hover:underline" onClick={() => { setIsRegister(!isRegister); setError("") }}>
-                {isRegister ? "Login" : "Register"}
-              </button>
-            </p>
           </CardContent>
         </Card>
       </div>
     )
   }
 
-  if (authMode === "patuih") {
+  // --- Patuih API Key setup (show after login if no key) ---
+  if (showPatuihSetup) {
     return (
       <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#05070a] p-4">
         <Card className="relative w-[420px] overflow-hidden rounded-2xl border-white/10 bg-slate-900/40 shadow-[0_0_50px_-12px_rgba(99,102,241,0.15)] backdrop-blur-xl">
@@ -327,6 +423,7 @@ export default function Lobby({
     )
   }
 
+  // --- Room selection (join/create) ---
   if (!tab) {
     return (
       <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#05070a] p-4">
@@ -348,10 +445,43 @@ export default function Lobby({
               Ada Chat
             </CardTitle>
             <CardDescription className="mx-auto mt-2 max-w-[280px] text-sm leading-relaxed text-slate-400">
-              Real-time messaging powered by Patuih Gateway.
+              {authUser ? (
+                <span>Welcome, <span className="text-indigo-300 font-semibold">{authUser.displayName || authUser.username}</span></span>
+              ) : (
+                "Real-time messaging powered by Patuih Gateway."
+              )}
             </CardDescription>
+            {authUser && (
+              <div className="mt-3 rounded-xl border border-indigo-500/20 bg-indigo-500/5 px-4 py-2.5 text-center">
+                <span className="text-[10px] font-bold tracking-wider text-indigo-400 uppercase">PIN Anda</span>
+                <p className="mt-0.5 font-mono text-lg font-extrabold tracking-widest text-white">{authUser.pin}</p>
+              </div>
+            )}
           </CardHeader>
           <CardContent className="flex flex-col gap-4 px-6 pt-4 pb-6">
+            {authUser && (
+              <div className="space-y-2">
+                <Label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">Cari via PIN</Label>
+                <div className="flex gap-2">
+                  <Input className="h-10 flex-1 rounded-xl border-slate-800/80 bg-slate-950/45 font-mono text-white placeholder-slate-500" placeholder="6 digit PIN" value={searchPin} onChange={(e) => setSearchPin(e.target.value.replace(/\D/g, "").slice(0, 6))} />
+                  <Button variant="secondary" className="h-10 rounded-xl border border-slate-800/80 bg-slate-900/60 px-4 text-xs font-semibold text-slate-200" onClick={handleSearchPin} disabled={searchPin.length !== 6 || searchingPin}>
+                    {searchingPin ? "..." : "Cari"}
+                  </Button>
+                </div>
+                {pinResult && (
+                  <Alert className="rounded-xl border-emerald-500/20 bg-emerald-500/10 text-emerald-400">
+                    <AlertDescription className="text-xs font-semibold">
+                      Found: <span className="text-white">{pinResult.displayName || pinResult.username}</span> (@{pinResult.username})
+                    </AlertDescription>
+                  </Alert>
+                )}
+                {pinError && (
+                  <Alert variant="destructive" className="rounded-xl border-rose-500/20 bg-rose-500/10 text-rose-400">
+                    <AlertDescription className="text-xs font-semibold">{pinError}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
+            )}
             <Button
               size="lg"
               className="flex w-full transform cursor-pointer items-center justify-center gap-2.5 rounded-xl border border-indigo-400/20 bg-linear-to-r from-indigo-600 to-indigo-500 py-6 font-semibold text-white shadow-lg shadow-indigo-600/15 transition-all duration-300 hover:-translate-y-0.5 hover:from-indigo-500 hover:to-indigo-400 hover:shadow-indigo-500/25"
@@ -369,12 +499,18 @@ export default function Lobby({
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               Create New Room
             </Button>
+            {authUser && (
+              <Button variant="ghost" className="mt-2 text-xs text-slate-500 hover:text-slate-300" onClick={onLogout}>
+                Logout
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>
     )
   }
 
+  // --- Join / Create room form ---
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[#05070a] p-4">
       <div className="pointer-events-none absolute top-1/4 left-1/4 h-[350px] w-[350px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-indigo-500/10 blur-3xl" />

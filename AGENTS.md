@@ -25,7 +25,7 @@ Anda adalah **React Frontend Engineer** untuk **Ada Chat** — aplikasi chat rea
 ```
 src/
   main.tsx                    — Entry point
-  App.tsx                     — Root component (session management)
+  App.tsx                     — Root component: auth + session management, OAuth route
   App.css                     — Global styles
   index.css                   — Tailwind imports
   lib/
@@ -36,15 +36,15 @@ src/
     use-auth.ts               — (TBD) Auth hook
   components/
     ui/                       — 55 shadcn/ui primitives
-    Lobby.tsx                 — Join / Create room screen
+    Lobby.tsx                 — Auth flow + Join / Create room screen
     Chat.tsx                  — Main chat view (WebSocket messaging)
     Message.tsx               — Message bubble component
+    OAuthCallback.tsx         — Handle OAuth redirect (accessToken dari URL → localStorage → redirect /)
     theme-provider.tsx        — Dark/light theme provider
     Settings.tsx              — (TBD) Settings: API Key, profile
-    OAuthCallback.tsx         — (TBD) Callback handler OAuth
   services/
-    api.ts                    — (TBD) REST API client (axios/fetch)
-    socket.ts                 — (TBD) Socket.IO connection manager
+    api.ts                    — REST API client (JWT auth, auto-refresh)
+    socket.ts                 — Socket.IO connection manager
 ```
 
 ---
@@ -53,10 +53,27 @@ src/
 
 1. **Login/Register** — Email/password atau Google OAuth (via backend REST API)
 2. **Setup Patuih API Key** — Wajib diisi setelah login, dikirim ke backend untuk disimpan
-3. **Lobby** — Buat room baru atau join room dengan token
+3. **Lobby (Room Selection)** — Setelah login, user masuk ke halaman pilih Join/Create room
 4. **Chat** — Connect ke **Backend WebSocket** (`/chat`), bukan langsung ke Patuih
 5. **Online Users** — Lihat siapa yang online di room
 6. **Typing Indicator** — Lihat siapa yang sedang mengetik
+
+### Auth Flow
+
+```
+App.tsx:
+  ├─ URL /oauth/callback → OAuthCallback.tsx (baca token, simpan, redirect ke /)
+  ├─ Tidak ada session → Lobby.tsx
+  │   ├─ authUser = null    → Auth form (login/register/Google)
+  │   ├─ showPatuihSetup    → Form input API Key Patuih
+  │   └─ authUser != null   → Room selection (Join/Create buttons)
+  └─ Ada session            → Chat.tsx
+```
+
+- `App.tsx` manage `authUser` (dari `/api/v1/auth/me`) dan `session` (room aktif)
+- `Lobby.tsx` props: `authUser`, `onAuthSuccess`, `onEnter`, `onLogout`
+- Google OAuth redirect dari backend → `/oauth/callback?accessToken=...&refreshToken=...`
+- `OAuthCallback.tsx` simpan token, redirect ke `/` → App.tsx render Lobby
 
 > 📖 Baca konsep lengkap: `KONSEP.md`
 
