@@ -61,9 +61,6 @@ interface SidebarProps {
   onAcceptInvite: (id: string) => Promise<void>
   onRejectInvite: (id: string) => Promise<void>
   onlineContacts: string[]
-  apiKey: string
-  onSaveApiKey: (key: string) => Promise<void>
-  onLogout?: () => void
 }
 
 export default function Sidebar({
@@ -86,105 +83,13 @@ export default function Sidebar({
   onAcceptInvite,
   onRejectInvite,
   onlineContacts,
-  apiKey,
-  onSaveApiKey,
-  onLogout,
 }: SidebarProps) {
-  const [apiKeyInput, setApiKeyInput] = useState("")
-  const [saveLoading, setSaveLoading] = useState(false)
-  const [saveError, setSaveError] = useState("")
-
   const [newDmName, setNewDmName] = useState("")
   const [searchQuery, setSearchQuery] = useState("")
   const [newContactInput, setNewContactInput] = useState("")
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteError, setInviteError] = useState("")
   const [inviteSuccess, setInviteSuccess] = useState(false)
-
-  const handleSaveKey = async (e: React.FormEvent) => {
-    e.preventDefault()
-    const val = apiKeyInput.trim()
-    if (!val) return
-    setSaveLoading(true)
-    setSaveError("")
-    try {
-      await onSaveApiKey(val)
-    } catch (err: any) {
-      setSaveError(err.message || "Failed to save API Key")
-    } finally {
-      setSaveLoading(false)
-    }
-  }
-
-  if (!apiKey) {
-    return (
-      <aside className="z-10 flex h-full w-[280px] flex-col border-r border-amber-500 bg-slate-950 p-4 justify-between relative overflow-hidden">
-        {/* Glowing aura background */}
-        <div className="pointer-events-none absolute -top-12 -left-12 h-40 w-40 rounded-full bg-amber-500/10 blur-3xl animate-pulse" />
-        <div className="pointer-events-none absolute -bottom-12 -right-12 h-40 w-40 rounded-full bg-amber-500/10 blur-3xl animate-pulse" />
-
-        <div className="flex-1 flex flex-col justify-center items-center py-6 px-2 text-center">
-          {/* Pulsating Lock Icon with Amber Shadow/glow */}
-          <div className="relative mb-6">
-            <div className="absolute -inset-2 rounded-full bg-amber-500/30 opacity-40 blur-md animate-ping duration-1000" />
-            <div className="relative flex h-16 w-16 items-center justify-center rounded-full border-2 border-amber-500 bg-amber-950/20 text-amber-500 shadow-[0_0_20px_rgba(245,158,11,0.4)] animate-pulse">
-              <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-            </div>
-          </div>
-
-          <h3 className="text-sm font-extrabold tracking-wide text-amber-500 uppercase mb-2 animate-pulse">
-            API KEY LOCKED
-          </h3>
-          <p className="text-[11px] leading-relaxed text-slate-400 mb-6">
-            API Key Patuih belum dikonfigurasi. Masukkan API Key Anda untuk mengaktifkan fitur Real-Time chat, room, kontak & momen.
-          </p>
-
-          <form onSubmit={handleSaveKey} className="w-full space-y-4">
-            <div className="space-y-2">
-              <label htmlFor="sidebar-patuih-key" className="text-[9px] font-bold tracking-wider text-amber-400/80 uppercase block text-left">
-                Patuih API Key
-              </label>
-              <Input
-                id="sidebar-patuih-key"
-                type="password"
-                value={apiKeyInput}
-                onChange={(e) => setApiKeyInput(e.target.value)}
-                placeholder="pk_live_..."
-                className="h-10 rounded-xl border-amber-500/30 bg-amber-500/5 text-slate-200 placeholder-amber-500/30 focus-visible:ring-amber-500 focus-visible:border-amber-500"
-              />
-            </div>
-
-            {saveError && (
-              <div className="rounded-lg border border-rose-500/20 bg-rose-500/10 p-2 text-left">
-                <p className="text-[10px] font-semibold text-rose-400 leading-normal">{saveError}</p>
-              </div>
-            )}
-
-            <Button
-              type="submit"
-              disabled={saveLoading}
-              className="w-full h-10 rounded-xl bg-amber-600 font-bold text-white hover:bg-amber-500 shadow-lg shadow-amber-600/15 border border-amber-500/50 hover:shadow-amber-500/25 transition-all duration-300 transform active:scale-95"
-            >
-              {saveLoading ? "Validating..." : "🔓 Unlock Lobby Chat"}
-            </Button>
-          </form>
-        </div>
-
-        {onLogout && (
-          <div className="pt-4 border-t border-slate-900/60 w-full flex justify-center">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onLogout}
-              className="text-[10px] text-slate-500 hover:text-slate-300 font-medium cursor-pointer"
-            >
-              Logout Account
-            </Button>
-          </div>
-        )}
-      </aside>
-    )
-  }
 
   const handleInviteSubmit = async () => {
     const val = newContactInput.trim()

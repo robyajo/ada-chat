@@ -63,3 +63,8 @@
 - Created src/components/com-chat/SettingsSheet.tsx (default export)
 - Chat.tsx imported them via import ProfileSheet/SettingsSheet
 - Chat.tsx shrunk ~60 lines
+
+## [2026-06-03] Hapus semua API Key per-user — pake PATUIH_SYSTEM_API_KEY
+- App.tsx: AuthUser dihapus patuihApiKey/patuihTenantId, Session dihapus apiKey/tenantId
+- Chat.tsx: AuthUser + Session interface dihapus field API key, semua referensi apiKey/tenantId dibersihkan
+- Lobby.tsx: dihapus form input API Key, Patuih setup, chat_key

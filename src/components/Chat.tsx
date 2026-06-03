@@ -11,10 +11,7 @@ import {
 import { api } from "@/services/api"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
-import {
-  Sheet,
-  SheetContent,
-} from "@/components/ui/sheet"
+import { Sheet, SheetContent } from "@/components/ui/sheet"
 import {
   Dialog,
   DialogContent,
@@ -24,7 +21,6 @@ import {
 } from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import ProfileSheet from "./com-chat/ProfileSheet"
-import SettingsSheet from "./com-chat/SettingsSheet"
 import Sidebar from "./com-chat/Sidebar"
 import MomentFeed from "./com-chat/MomentFeed"
 import ActiveChatArea from "./com-chat/ActiveChatArea"
@@ -63,29 +59,22 @@ interface AuthUser {
   username: string
   displayName: string | null
   pin: string
-  patuihApiKey: string | null
-  patuihTenantId: string | null
 }
 
 interface Session {
   name: string
   room: string
-  apiKey: string
-  tenantId: string
   userId?: string
 }
 
 interface ChatProps {
   user: string
   room: string
-  apiKey: string
-  tenantId: string
   userId?: string
   authUser: AuthUser | null
   onLeave: () => void
   onEnterRoom: (s: Session) => void
   onLogout: () => void
-  onAuthSuccess?: (user: AuthUser) => void
 }
 
 function genId() {
@@ -99,36 +88,15 @@ function genId() {
 export default function Chat({
   user,
   room,
-  apiKey,
-  tenantId,
   userId,
   authUser,
   onLeave,
   onEnterRoom,
   onLogout,
-  onAuthSuccess,
 }: ChatProps) {
-  const handleSaveApiKey = async (key: string) => {
-    try {
-      const keyResult = await api.post<{ tenantId: string }>("/api/v1/chat/patuih-key", { apiKey: key })
-      localStorage.setItem("chat_key", key)
-      const updatedUser = await api.get<AuthUser>("/api/v1/auth/me")
-      if (onAuthSuccess) {
-        onAuthSuccess(updatedUser)
-      }
-      onEnterRoom({
-        name: updatedUser.displayName || updatedUser.username,
-        room: room || "",
-        apiKey: key,
-        tenantId: keyResult.tenantId,
-        userId: updatedUser.id,
-      })
-    } catch (err: any) {
-      throw new Error(err.message || "Failed to validate or save API key")
-    }
-  }
-
-  const [activeTab, setActiveTab] = useState<"chat" | "room" | "contact" | "moment">(() => {
+  const [activeTab, setActiveTab] = useState<
+    "chat" | "room" | "contact" | "moment"
+  >(() => {
     if (room) {
       return room.startsWith("dm_") ? "chat" : "room"
     }
@@ -137,7 +105,10 @@ export default function Chat({
 
   // Contacts states
   const [contacts, setContacts] = useState<any[]>([])
-  const [invites, setInvites] = useState<{ received: any[]; sent: any[] }>({ received: [], sent: [] })
+  const [invites, setInvites] = useState<{ received: any[]; sent: any[] }>({
+    received: [],
+    sent: [],
+  })
   const [onlineContacts, setOnlineContacts] = useState<string[]>([])
   const [showFabDialog, setShowFabDialog] = useState(false)
   const [fabSearchQuery, setFabSearchQuery] = useState("")
@@ -162,7 +133,9 @@ export default function Chat({
 
   const fetchOnlineContacts = useCallback(async () => {
     try {
-      const data = await api.get<{ online: string[] }>("/api/v1/contacts/online")
+      const data = await api.get<{ online: string[] }>(
+        "/api/v1/contacts/online"
+      )
       setOnlineContacts(data.online)
     } catch {
       // ignore
@@ -257,17 +230,10 @@ export default function Chat({
   const [showCreateRoom, setShowCreateRoom] = useState(false)
   const [showJoinRoom, setShowJoinRoom] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
-  const [showSettings, setShowSettings] = useState(false)
-  const [newApiKey, setNewApiKey] = useState(
-    () => localStorage.getItem("chat_key") || apiKey
-  )
   const [generatedRoom, setGeneratedRoom] = useState("")
   const [joinRoomId, setJoinRoomId] = useState("")
   const [dialogError, setDialogError] = useState("")
   const [dialogLoading, setDialogLoading] = useState(false)
-  const [settingsKey, setSettingsKey] = useState("")
-  const [settingsError, setSettingsError] = useState("")
-  const [settingsLoading, setSettingsLoading] = useState(false)
   const [userRooms, setUserRooms] = useState<
     Array<{
       id: string
@@ -278,7 +244,6 @@ export default function Chat({
     }>
   >([])
 
-
   const endRef = useRef<HTMLDivElement>(null)
   const sendingRef = useRef(false)
   const socketRef = useRef<Socket | null>(null)
@@ -286,14 +251,16 @@ export default function Chat({
   const isTypingRef = useRef(false)
 
   useEffect(() => {
-    if (!tenantId || !room) return
-    if (socketRef.current) disconnectChat()
+    const effectiveTenantId = "system"
     const token = localStorage.getItem("accessToken") ?? ""
     const uid = userId || ""
-    const socket = connectChat(uid, user, tenantId, token)
+
+    const socket = connectChat(uid, user, effectiveTenantId, token)
     socketRef.current = socket
     socket.on("connect", () => {
-      joinRoom(socket, room, user)
+      if (room) {
+        joinRoom(socket, room, user)
+      }
     })
     socket.on("notification", (payload: any) => {
       if (payload.event === "contact.invite") {
@@ -313,7 +280,7 @@ export default function Chat({
     socket.on("presence", (payload: any) => {
       if (payload.event === "presence.online") {
         const u = payload.data.username
-        setOnlineContacts((prev) => prev.includes(u) ? prev : [...prev, u])
+        setOnlineContacts((prev) => (prev.includes(u) ? prev : [...prev, u]))
       } else if (payload.event === "presence.offline") {
         const u = payload.data.username
         setOnlineContacts((prev) => prev.filter((x) => x !== u))
@@ -347,12 +314,20 @@ export default function Chat({
                 const exists = prev.some((d) => d.username === dmUser)
                 if (exists) {
                   return [
-                    { username: dmUser, lastMessage: textVal, timestamp: payload.timestamp || new Date().toISOString() },
+                    {
+                      username: dmUser,
+                      lastMessage: textVal,
+                      timestamp: payload.timestamp || new Date().toISOString(),
+                    },
                     ...prev.filter((d) => d.username !== dmUser),
                   ]
                 }
                 return [
-                  { username: dmUser, lastMessage: textVal, timestamp: payload.timestamp || new Date().toISOString() },
+                  {
+                    username: dmUser,
+                    lastMessage: textVal,
+                    timestamp: payload.timestamp || new Date().toISOString(),
+                  },
                   ...prev,
                 ]
               })
@@ -426,7 +401,15 @@ export default function Chat({
       disconnectChat()
       socketRef.current = null
     }
-  }, [room, user, tenantId, userId, fetchInvites, fetchContacts, fetchOnlineContacts])
+  }, [
+    room,
+    user,
+    userId,
+    authUser,
+    fetchInvites,
+    fetchContacts,
+    fetchOnlineContacts,
+  ])
 
   useEffect(() => {
     if (room)
@@ -535,12 +518,20 @@ export default function Chat({
           const exists = prev.some((d) => d.username === dmUser)
           if (exists) {
             return [
-              { username: dmUser, lastMessage: t, timestamp: new Date().toISOString() },
+              {
+                username: dmUser,
+                lastMessage: t,
+                timestamp: new Date().toISOString(),
+              },
               ...prev.filter((d) => d.username !== dmUser),
             ]
           }
           return [
-            { username: dmUser, lastMessage: t, timestamp: new Date().toISOString() },
+            {
+              username: dmUser,
+              lastMessage: t,
+              timestamp: new Date().toISOString(),
+            },
             ...prev,
           ]
         })
@@ -568,7 +559,10 @@ export default function Chat({
       }
 
       // Check if this is a DM with a mock bot account
-      if (activeDmUser && (activeDmUser === "DeepMind Agent" || activeDmUser === "Patuih Support")) {
+      if (
+        activeDmUser &&
+        (activeDmUser === "DeepMind Agent" || activeDmUser === "Patuih Support")
+      ) {
         setTimeout(() => {
           const botReplyId = "bot_" + Date.now()
           let botReplyText = "Hello! I am an automated assistant."
@@ -578,16 +572,16 @@ export default function Chat({
               "Always keep components focused and reusable! Extract subviews to components.",
               "Clean code is key. Prefer pure functions and custom hooks for business logic.",
               "Have you checked out our AI developer tools? I am pair programming with you right now!",
-              "Glassmorphism styling tip: combine low opacity background color with backdrop-filter blur and a subtle border!"
+              "Glassmorphism styling tip: combine low opacity background color with backdrop-filter blur and a subtle border!",
             ]
             botReplyText = tips[Math.floor(Math.random() * tips.length)]
           } else if (activeDmUser === "Patuih Support") {
             const tips = [
-              "Make sure your Patuih API Key starts with 'pk_'.",
-              "You can check your API connection status in the Settings tab.",
-              "If you experience connection errors, try verifying your Tenant ID.",
+              "Ada Chat is fully integrated with Patuih Gateway.",
+              "All real-time events are routed automatically.",
+              "If you experience connection errors, check your internet connectivity.",
               "Need help with socket channels? All communication runs on high-speed pub/sub pipelines.",
-              "Our team is available 24/7. How can we help you today?"
+              "Our team is available 24/7. How can we help you today?",
             ]
             botReplyText = tips[Math.floor(Math.random() * tips.length)]
           }
@@ -607,7 +601,11 @@ export default function Chat({
           setRecentDms((prev) =>
             prev.map((d) =>
               d.username === activeDmUser
-                ? { ...d, lastMessage: botReplyText, timestamp: new Date().toISOString() }
+                ? {
+                    ...d,
+                    lastMessage: botReplyText,
+                    timestamp: new Date().toISOString(),
+                  }
                 : d
             )
           )
@@ -646,23 +644,18 @@ export default function Chat({
     roomId: string
     isOwner: boolean
   }) => {
-    const existingKey = localStorage.getItem("chat_key") || apiKey
     const existingName = localStorage.getItem("chat_name") || user
     onEnterRoom({
       name: existingName,
       room: r.roomId,
-      apiKey: existingKey,
-      tenantId,
       userId: authUser?.id ?? "",
     })
   }
 
-
-
   const handleCopyRoomId = () => {
     if (!room) return
     try {
-      navigator.clipboard.writeText(btoa(`${room}|${tenantId}|${apiKey}`))
+      navigator.clipboard.writeText(room)
       setToastMsg("Room Token copied to clipboard!")
     } catch {
       navigator.clipboard.writeText(room)
@@ -679,13 +672,19 @@ export default function Chat({
   const [roomAvatar, setRoomAvatar] = useState("💬")
   const [invitePin, setInvitePin] = useState("")
   const [inviteLoading, setInviteLoading] = useState(false)
-  const [invitedUsers, setInvitedUsers] = useState<Array<{ id: string; username: string; displayName: string | null }>>([])
+  const [invitedUsers, setInvitedUsers] = useState<
+    Array<{ id: string; username: string; displayName: string | null }>
+  >([])
 
   const handleAddInvite = async () => {
     if (invitePin.length !== 6) return
     setInviteLoading(true)
     try {
-      const user = await api.get<{ id: string; username: string; displayName: string | null }>(`/api/v1/auth/find-by-pin?pin=${invitePin}`)
+      const user = await api.get<{
+        id: string
+        username: string
+        displayName: string | null
+      }>(`/api/v1/auth/find-by-pin?pin=${invitePin}`)
       if (!invitedUsers.some((u) => u.id === user.id)) {
         setInvitedUsers((prev) => [...prev, user])
       }
@@ -703,32 +702,23 @@ export default function Chat({
     setDialogLoading(true)
     try {
       const n = user
-      const k = newApiKey.trim()
       const rn = roomNameInput.trim()
       if (!rn) {
         setDialogError("Room name is required")
         setDialogLoading(false)
         return
       }
-      if (!k) {
-        setDialogError("API Key required")
-        setDialogLoading(false)
-        return
-      }
-      const keyResult = await api.post<{ tenantId: string }>(
-        "/api/v1/chat/patuih-key",
-        { apiKey: k }
+      const room = await api.post<{ id: string; name: string; roomId: string }>(
+        "/api/v1/chat/rooms",
+        { name: rn, roomId: generatedRoom, avatarUrl: roomAvatar }
       )
-        const room = await api.post<{ id: string; name: string; roomId: string }>(
-          "/api/v1/chat/rooms",
-          { name: rn, roomId: generatedRoom, avatarUrl: roomAvatar }
-        )
-        await api.post(`/api/v1/chat/rooms/${room.id}/join`)
-        for (const _invited of invitedUsers) {
-          try { await api.post(`/api/v1/chat/rooms/${room.id}/join`) } catch {}
-        }
+      await api.post(`/api/v1/chat/rooms/${room.id}/join`)
+      for (const _invited of invitedUsers) {
+        try {
+          await api.post(`/api/v1/chat/rooms/${room.id}/join`)
+        } catch {}
+      }
       localStorage.setItem("chat_name", n)
-      localStorage.setItem("chat_key", k)
       setUserRooms((prev) => [
         ...prev,
         {
@@ -743,8 +733,6 @@ export default function Chat({
       onEnterRoom({
         name: n,
         room: generatedRoom,
-        apiKey: k,
-        tenantId: keyResult.tenantId,
         userId: authUser?.id ?? "",
       })
     } catch (err: unknown) {
@@ -759,57 +747,45 @@ export default function Chat({
     setDialogLoading(true)
     try {
       const r = joinRoomId.trim()
-      if (!r) { setDialogError("Enter Room ID or Token"); setDialogLoading(false); return }
+      if (!r) {
+        setDialogError("Enter Room ID or Token")
+        setDialogLoading(false)
+        return
+      }
       let actualRoom = r
-      let actualKey = newApiKey.trim()
-      let actualTenant = ""
       if (r.length > 20) {
         try {
-          const decoded = atob(r); const parts = decoded.split("|")
-          if (parts.length >= 2) { actualRoom = parts[0]; actualKey = parts[1] }
-          if (parts.length === 3) { actualTenant = parts[1]; actualKey = parts[2] }
+          const decoded = atob(r)
+          const parts = decoded.split("|")
+          if (parts.length >= 1) {
+            actualRoom = parts[0]
+          }
         } catch {}
       }
-      if (!actualKey) { setDialogError("API Key required"); setDialogLoading(false); return }
-      const keyResult = await api.post<{ tenantId: string }>("/api/v1/chat/patuih-key", { apiKey: actualKey })
       const n = localStorage.getItem("chat_name") || user
-      localStorage.setItem("chat_key", actualKey)
       setShowJoinRoom(false)
-      onEnterRoom({ name: n, room: actualRoom, apiKey: actualKey, tenantId: actualTenant || keyResult.tenantId, userId: authUser?.id ?? "" })
-    } catch (err: unknown) { setDialogError(err instanceof Error ? err.message : "Failed") }
-    finally { setDialogLoading(false) }
-  }
-
-  const handleUpdateApiKey = async () => {
-    if (!settingsKey.trim()) return
-    setSettingsError("")
-    setSettingsLoading(true)
-    try {
-      await api.post("/api/v1/chat/patuih-key", {
-        apiKey: settingsKey.trim(),
-      })
-      localStorage.setItem("chat_key", settingsKey.trim())
-      setToastMsg("API Key updated!")
-      setShowSettings(false)
+      onEnterRoom({ name: n, room: actualRoom, userId: authUser?.id ?? "" })
     } catch (err: unknown) {
-      setSettingsError(err instanceof Error ? err.message : "Failed")
+      setDialogError(err instanceof Error ? err.message : "Failed")
     } finally {
-      setSettingsLoading(false)
+      setDialogLoading(false)
     }
   }
 
   // === RENDER: UNIFIED TABS VIEW ===
   const handleSelectDm = (targetUsername: string) => {
-    const dmRoomId = getDmRoomId(user, targetUsername)
-    onEnterRoom({
-      name: user,
-      room: dmRoomId,
-      apiKey,
-      tenantId,
-      userId: authUser?.id ?? "",
-    })
-    setActiveTab("chat")
-  }
+      const dmRoomId = getDmRoomId(user, targetUsername)
+      setRecentDms((prev) => {
+        if (prev.some((d) => d.username === targetUsername)) return prev
+        return [{ username: targetUsername, lastMessage: "Click to start chatting", timestamp: new Date().toISOString() }, ...prev]
+      })
+      onEnterRoom({
+        name: user,
+        room: dmRoomId,
+        userId: authUser?.id ?? "",
+      })
+      setActiveTab("chat")
+    }
 
   const handleAddDm = (targetUsername: string) => {
     if (targetUsername === user) return
@@ -830,7 +806,7 @@ export default function Chat({
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-950 font-sans text-slate-100">
       {/* Sidebar for Desktop */}
-      <div className="hidden md:flex h-full shrink-0">
+      <div className="hidden h-full shrink-0 md:flex">
         <Sidebar
           user={user}
           activeTab={activeTab}
@@ -859,9 +835,6 @@ export default function Chat({
           onAcceptInvite={handleAcceptInvite}
           onRejectInvite={handleRejectInvite}
           onlineContacts={onlineContacts}
-          apiKey={apiKey}
-          onSaveApiKey={handleSaveApiKey}
-          onLogout={onLogout}
         />
       </div>
 
@@ -910,15 +883,12 @@ export default function Chat({
             onAcceptInvite={handleAcceptInvite}
             onRejectInvite={handleRejectInvite}
             onlineContacts={onlineContacts}
-            apiKey={apiKey}
-            onSaveApiKey={handleSaveApiKey}
-            onLogout={onLogout}
           />
         </SheetContent>
       </Sheet>
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col overflow-hidden h-full">
+      <div className="flex h-full flex-1 flex-col overflow-hidden">
         {activeTab === "moment" ? (
           <MomentFeed currentUser={user} getColor={getColor} />
         ) : room ? (
@@ -938,27 +908,23 @@ export default function Chat({
             onLeaveRoom={handleManualLeave}
             onCopyToken={handleCopyRoomId}
             onOpenProfile={() => setShowProfile(true)}
-            onOpenSettings={() => {
-              setSettingsKey(localStorage.getItem("chat_key") || apiKey)
-              setShowSettings(true)
-            }}
             getColor={getColor}
             onOpenSidebarMobile={() => setSidebarOpen(true)}
           />
         ) : (
           /* Welcome/Empty State */
-          <div className="flex flex-1 flex-col items-center justify-center p-8 bg-[#05070a] relative">
+          <div className="relative flex flex-1 flex-col items-center justify-center bg-[#05070a] p-8">
             {/* Header for Welcome State on Mobile */}
-            <header className="absolute top-0 left-0 right-0 flex h-16 w-full items-center justify-between border-b border-slate-900 bg-slate-950/40 px-4 backdrop-blur-md md:hidden">
+            <header className="absolute top-0 right-0 left-0 flex h-16 w-full items-center justify-between border-b border-slate-900 bg-slate-950/40 px-4 backdrop-blur-md md:hidden">
               <Button
                 variant="ghost"
                 size="icon"
                 className="text-slate-400 hover:text-white"
                 onClick={() => setSidebarOpen(true)}
               >
-                <Menu className="w-5 h-5" />
+                <Menu className="h-5 w-5" />
               </Button>
-              <span className="font-extrabold text-sm text-indigo-400">
+              <span className="text-sm font-extrabold text-indigo-400">
                 Ada Chat
               </span>
               <Button
@@ -973,16 +939,16 @@ export default function Chat({
 
             <div className="max-w-md text-center">
               <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/10 shadow-lg shadow-indigo-500/5">
-                <Sparkles className="h-10 w-10 text-indigo-400 animate-pulse" />
+                <Sparkles className="h-10 w-10 animate-pulse text-indigo-400" />
               </div>
               <h2 className="mb-2.5 text-2xl font-extrabold text-white">
                 Welcome to Ada Chat
               </h2>
-              <p className="mb-8 text-sm text-slate-400 leading-relaxed">
+              <p className="mb-8 text-sm leading-relaxed text-slate-400">
                 Choose a channel, start a direct message with friends or check
                 out what's new in the Moments tab.
               </p>
-              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+              <div className="flex flex-col justify-center gap-3 sm:flex-row">
                 <Button
                   onClick={() => {
                     setShowCreateRoom(true)
@@ -990,7 +956,7 @@ export default function Chat({
                     setRoomNameInput("")
                     setInvitedUsers([])
                   }}
-                  className="h-10 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-white text-xs shadow-md shadow-indigo-600/15"
+                  className="h-10 rounded-xl bg-indigo-600 px-5 text-xs font-bold text-white shadow-md shadow-indigo-600/15 hover:bg-indigo-500"
                 >
                   Create New Room
                 </Button>
@@ -999,7 +965,7 @@ export default function Chat({
                     setShowJoinRoom(true)
                     setJoinRoomId("")
                   }}
-                  className="h-10 px-5 rounded-xl border border-slate-800 bg-slate-900/50 hover:bg-slate-900 text-slate-300 hover:text-white text-xs font-bold"
+                  className="h-10 rounded-xl border border-slate-800 bg-slate-900/50 px-5 text-xs font-bold text-slate-300 hover:bg-slate-900 hover:text-white"
                 >
                   Join Existing Room
                 </Button>
@@ -1016,20 +982,9 @@ export default function Chat({
         onOpenChange={setShowProfile}
       />
 
-      {/* Settings Sheet */}
-      <SettingsSheet
-        settingsKey={settingsKey}
-        setSettingsKey={setSettingsKey}
-        handleUpdate={handleUpdateApiKey}
-        loading={settingsLoading}
-        error={settingsError}
-        open={showSettings}
-        onOpenChange={setShowSettings}
-      />
-
       {/* Join Room Dialog */}
       <Dialog open={showJoinRoom} onOpenChange={setShowJoinRoom}>
-        <DialogContent className="border-slate-800 bg-slate-950 text-slate-100 sm:max-w-[420px] rounded-2xl">
+        <DialogContent className="rounded-2xl border-slate-800 bg-slate-950 text-slate-100 sm:max-w-[420px]">
           <DialogHeader>
             <DialogTitle className="text-white">Join Room</DialogTitle>
             <DialogDescription className="text-slate-400">
@@ -1049,14 +1004,17 @@ export default function Chat({
               />
             </div>
             {dialogError && (
-              <Alert variant="destructive" className="rounded-xl border-rose-500/20 bg-rose-500/10 text-rose-400">
+              <Alert
+                variant="destructive"
+                className="rounded-xl border-rose-500/20 bg-rose-500/10 text-rose-400"
+              >
                 <AlertDescription className="text-xs font-semibold">
                   {dialogError}
                 </AlertDescription>
               </Alert>
             )}
             <Button
-              className="w-full h-11 rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500 shadow-md"
+              className="h-11 w-full rounded-xl bg-indigo-600 font-bold text-white shadow-md hover:bg-indigo-500"
               onClick={handleJoinRoomSubmit}
               disabled={dialogLoading}
             >
@@ -1068,7 +1026,7 @@ export default function Chat({
 
       {/* Create Room Dialog */}
       <Dialog open={showCreateRoom} onOpenChange={setShowCreateRoom}>
-        <DialogContent className="border-slate-800 bg-slate-950 text-slate-100 sm:max-w-[420px] rounded-2xl">
+        <DialogContent className="rounded-2xl border-slate-800 bg-slate-950 text-slate-100 sm:max-w-[420px]">
           <DialogHeader>
             <DialogTitle className="text-white">Create New Room</DialogTitle>
             <DialogDescription className="text-slate-400">
@@ -1080,7 +1038,7 @@ export default function Chat({
               <Label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
                 Room Avatar
               </Label>
-              <div className="flex gap-2 flex-wrap">
+              <div className="flex flex-wrap gap-2">
                 {[
                   "💬",
                   "🎮",
@@ -1135,7 +1093,7 @@ export default function Chat({
                 />
                 <Button
                   variant="secondary"
-                  className="h-11 rounded-xl border border-slate-800 bg-slate-900 px-4 text-xs font-semibold text-slate-300 hover:bg-slate-850"
+                  className="hover:bg-slate-850 h-11 rounded-xl border border-slate-800 bg-slate-900 px-4 text-xs font-semibold text-slate-300"
                   onClick={handleAddInvite}
                   disabled={invitePin.length !== 6 || inviteLoading}
                 >
@@ -1143,7 +1101,7 @@ export default function Chat({
                 </Button>
               </div>
               {invitedUsers.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
+                <div className="mt-2 flex flex-wrap gap-1.5">
                   {invitedUsers.map((u) => (
                     <span
                       key={u.id}
@@ -1156,7 +1114,7 @@ export default function Chat({
                             prev.filter((x) => x.id !== u.id)
                           )
                         }
-                        className="text-indigo-400 hover:text-white ml-0.5"
+                        className="ml-0.5 text-indigo-400 hover:text-white"
                       >
                         &times;
                       </button>
@@ -1165,27 +1123,18 @@ export default function Chat({
                 </div>
               )}
             </div>
-            <div className="space-y-2">
-              <Label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                API Key
-              </Label>
-              <Input
-                className="h-11 rounded-xl border-slate-800 bg-slate-900/60 text-white placeholder-slate-500 focus-visible:ring-indigo-500"
-                type="password"
-                value={newApiKey}
-                onChange={(e) => setNewApiKey(e.target.value)}
-                placeholder="pk_live_..."
-              />
-            </div>
             {dialogError && (
-              <Alert variant="destructive" className="rounded-xl border-rose-500/20 bg-rose-500/10 text-rose-400">
+              <Alert
+                variant="destructive"
+                className="rounded-xl border-rose-500/20 bg-rose-500/10 text-rose-400"
+              >
                 <AlertDescription className="text-xs font-semibold">
                   {dialogError}
                 </AlertDescription>
               </Alert>
             )}
             <Button
-              className="w-full h-11 rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500 shadow-md"
+              className="h-11 w-full rounded-xl bg-indigo-600 font-bold text-white shadow-md hover:bg-indigo-500"
               onClick={handleCreateRoomApi}
               disabled={dialogLoading}
             >
@@ -1197,7 +1146,7 @@ export default function Chat({
 
       {/* FAB: Start New Chat Dialog */}
       <Dialog open={showFabDialog} onOpenChange={setShowFabDialog}>
-        <DialogContent className="border-slate-800 bg-slate-950 text-slate-100 sm:max-w-[420px] rounded-2xl">
+        <DialogContent className="rounded-2xl border-slate-800 bg-slate-950 text-slate-100 sm:max-w-[420px]">
           <DialogHeader>
             <DialogTitle className="text-white">New Chat</DialogTitle>
             <DialogDescription className="text-slate-400">
@@ -1206,27 +1155,31 @@ export default function Chat({
           </DialogHeader>
           <div className="space-y-4">
             <div className="relative">
-              <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-500" />
+              <Search className="absolute top-3.5 left-3 h-4 w-4 text-slate-500" />
               <Input
                 value={fabSearchQuery}
                 onChange={(e) => setFabSearchQuery(e.target.value)}
                 placeholder="Search friends..."
-                className="h-11 pl-9 pr-3 rounded-xl border-slate-800 bg-slate-900/60 text-white placeholder-slate-500 focus-visible:ring-indigo-500"
+                className="h-11 rounded-xl border-slate-800 bg-slate-900/60 pr-3 pl-9 text-white placeholder-slate-500 focus-visible:ring-indigo-500"
               />
             </div>
 
             <ScrollArea className="h-64 rounded-xl border border-slate-900 bg-slate-950/40 p-2">
               <div className="flex flex-col gap-1.5">
                 {contacts.filter((c) =>
-                  (c.displayName || c.username).toLowerCase().includes(fabSearchQuery.toLowerCase())
+                  (c.displayName || c.username)
+                    .toLowerCase()
+                    .includes(fabSearchQuery.toLowerCase())
                 ).length === 0 ? (
-                  <p className="text-xs text-slate-500 py-8 text-center italic">
+                  <p className="py-8 text-center text-xs text-slate-500 italic">
                     No friends found
                   </p>
                 ) : (
                   contacts
                     .filter((c) =>
-                      (c.displayName || c.username).toLowerCase().includes(fabSearchQuery.toLowerCase())
+                      (c.displayName || c.username)
+                        .toLowerCase()
+                        .includes(fabSearchQuery.toLowerCase())
                     )
                     .map((friend) => (
                       <button
@@ -1235,16 +1188,18 @@ export default function Chat({
                           setShowFabDialog(false)
                           handleSelectDm(friend.username)
                         }}
-                        className="flex items-center gap-3 rounded-xl border border-slate-850 bg-slate-900/10 p-2.5 text-left hover:border-slate-800 hover:bg-slate-900/35 transition-all w-full cursor-pointer"
+                        className="border-slate-850 flex w-full cursor-pointer items-center gap-3 rounded-xl border bg-slate-900/10 p-2.5 text-left transition-all hover:border-slate-800 hover:bg-slate-900/35"
                       >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-400 font-bold text-xs">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/20 text-xs font-bold text-indigo-400">
                           {friend.username.charAt(0).toUpperCase()}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="truncate font-semibold text-xs text-slate-200">
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold text-slate-200">
                             {friend.displayName || friend.username}
                           </p>
-                          <p className="truncate text-[9px] text-slate-500">@{friend.username}</p>
+                          <p className="truncate text-[9px] text-slate-500">
+                            @{friend.username}
+                          </p>
                         </div>
                       </button>
                     ))
@@ -1257,13 +1212,13 @@ export default function Chat({
 
       {/* Floating Action Button (FAB) for New Chat */}
       {authUser && (
-        <div className="fixed bottom-6 right-6 z-50">
+        <div className="fixed right-6 bottom-6 z-50">
           <Button
             onClick={() => {
               setFabSearchQuery("")
               setShowFabDialog(true)
             }}
-            className="flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-xl shadow-indigo-600/35 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
+            className="flex h-14 w-14 cursor-pointer items-center justify-center rounded-full bg-indigo-600 text-white shadow-xl shadow-indigo-600/35 transition-all duration-200 hover:scale-105 active:scale-95"
           >
             <MessageSquare className="h-6 w-6" />
           </Button>

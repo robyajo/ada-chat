@@ -51,12 +51,6 @@ export default function ProfileSheet({
               <span className="text-slate-400">Display Name</span>
               <span className="text-white">{authUser.displayName || "-"}</span>
             </div>
-            <div className="flex justify-between rounded-lg border border-slate-800/50 px-4 py-3">
-              <span className="text-slate-400">API Key</span>
-              <span className="text-xs text-emerald-400">
-                {authUser.patuihApiKey ? "Configured" : "Not set"}
-              </span>
-            </div>
           </div>
         </div>
       </SheetContent>

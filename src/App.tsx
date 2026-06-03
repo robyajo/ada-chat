@@ -12,15 +12,11 @@ export interface AuthUser {
   username: string
   displayName: string | null
   pin: string
-  patuihApiKey: string | null
-  patuihTenantId: string | null
 }
 
 interface Session {
   name: string
   room: string
-  apiKey: string
-  tenantId: string
   userId?: string
 }
 
@@ -28,18 +24,13 @@ function loadSession(): Session | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY)
     if (raw) return JSON.parse(raw)
-  } catch {
-    /* ignore */
-  }
+  } catch { /* ignore */ }
   return null
 }
 
 function saveSession(s: Session | null) {
-  if (s) {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(s))
-  } else {
-    localStorage.removeItem(SESSION_KEY)
-  }
+  if (s) localStorage.setItem(SESSION_KEY, JSON.stringify(s))
+  else localStorage.removeItem(SESSION_KEY)
 }
 
 function getInitialAuthReady(): boolean {
@@ -58,20 +49,11 @@ export default function App() {
     const at = localStorage.getItem("accessToken")
     if (!at) return
     let cancelled = false
-    api
-      .get<AuthUser>("/api/v1/auth/me")
-      .then((user) => {
-        if (!cancelled) setAuthUser(user)
-      })
-      .catch(() => {
-        if (!cancelled) clearTokens()
-      })
-      .finally(() => {
-        if (!cancelled) setAuthReady(true)
-      })
-    return () => {
-      cancelled = true
-    }
+    api.get<AuthUser>("/api/v1/auth/me")
+      .then((user) => { if (!cancelled) setAuthUser(user) })
+      .catch(() => { if (!cancelled) clearTokens() })
+      .finally(() => { if (!cancelled) setAuthReady(true) })
+    return () => { cancelled = true }
   }, [isOAuthPath])
 
   useEffect(() => {
@@ -84,9 +66,7 @@ export default function App() {
     return () => window.removeEventListener("auth:expired", handler)
   }, [])
 
-  if (isOAuthPath) {
-    return <OAuthCallback />
-  }
+  if (isOAuthPath) return <OAuthCallback />
 
   if (!authReady) {
     return (
@@ -98,74 +78,43 @@ export default function App() {
     )
   }
 
-  const hasApiKey = !!(authUser?.patuihApiKey && authUser?.patuihTenantId)
-
-  // If user has an active session (in a room), show Chat
+  // In-room session
   if (session) {
     return (
       <Chat
         user={session.name}
         room={session.room}
-        apiKey={session.apiKey}
-        tenantId={session.tenantId}
         userId={session.userId}
         authUser={authUser}
-        onLeave={() => {
-          setSession(null)
-          saveSession(null)
-        }}
-        onEnterRoom={(s) => {
-          setSession(s)
-          saveSession(s)
-        }}
-        onLogout={() => {
-          setAuthUser(null)
-          clearTokens()
-        }}
-        onAuthSuccess={(user) => setAuthUser(user)}
+        onLeave={() => { setSession(null); saveSession(null) }}
+        onEnterRoom={(s) => { setSession(s); saveSession(s) }}
+        onLogout={() => { setAuthUser(null); clearTokens() }}
       />
     )
   }
 
-  // If authenticated AND has API key → Chat (no room = welcome screen)
-  if (authUser && hasApiKey) {
+  // Authenticated → Chat (welcome/no room)
+  if (authUser) {
     return (
       <Chat
         user={authUser.displayName || authUser.username}
         room=""
-        apiKey={authUser.patuihApiKey!}
-        tenantId={authUser.patuihTenantId!}
         userId={authUser.id}
         authUser={authUser}
         onLeave={() => {}}
-        onEnterRoom={(s) => {
-          setSession(s)
-          saveSession(s)
-        }}
-        onLogout={() => {
-          setAuthUser(null)
-          clearTokens()
-        }}
-        onAuthSuccess={(user) => setAuthUser(user)}
+        onEnterRoom={(s) => { setSession(s); saveSession(s) }}
+        onLogout={() => { setAuthUser(null); clearTokens() }}
       />
     )
   }
 
+  // Not authenticated → Lobby
   return (
     <Lobby
       authUser={authUser}
       onAuthSuccess={(user) => setAuthUser(user)}
-      onEnter={(s) => {
-        setSession(s)
-        saveSession(s)
-      }}
-      onDirectChat={() => {
-        // After setting up API key in Lobby, user goes to Chat
-      }}
-      onLogout={() => {
-        setAuthUser(null)
-        clearTokens()
-      }}
+      onEnter={(s) => { setSession(s); saveSession(s) }}
+      onLogout={() => { setAuthUser(null); clearTokens() }}
     />
   )
 }

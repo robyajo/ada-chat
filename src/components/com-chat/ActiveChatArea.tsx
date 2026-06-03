@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import Message from "../Message"
-import { Menu, MessageSquare, ShieldAlert, Copy, User, Settings, LogOut, Send } from "lucide-react"
+import { Menu, MessageSquare, ShieldAlert, Copy, User, LogOut, Send } from "lucide-react"
 
 interface ActiveChatAreaProps {
   user: string
@@ -23,7 +23,6 @@ interface ActiveChatAreaProps {
   onLeaveRoom: () => void
   onCopyToken: () => void
   onOpenProfile: () => void
-  onOpenSettings: () => void
   getColor: (name: string) => string
   onOpenSidebarMobile: () => void
 }
@@ -44,7 +43,6 @@ export default function ActiveChatArea({
   onLeaveRoom,
   onCopyToken,
   onOpenProfile,
-  onOpenSettings,
   getColor,
   onOpenSidebarMobile,
 }: ActiveChatAreaProps) {
@@ -117,20 +115,6 @@ export default function ActiveChatArea({
             </TooltipTrigger>
             <TooltipContent className="border-slate-800 bg-slate-900 text-xs text-slate-300">
               Profile
-            </TooltipContent>
-          </Tooltip>
-
-          {/* Settings */}
-          <Tooltip>
-            <TooltipTrigger
-              render={<button />}
-              className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-900 bg-slate-900/40 text-slate-400 hover:bg-slate-900 hover:text-white"
-              onClick={onOpenSettings}
-            >
-              <Settings className="w-4 h-4 mx-auto" />
-            </TooltipTrigger>
-            <TooltipContent className="border-slate-800 bg-slate-900 text-xs text-slate-300">
-              Settings
             </TooltipContent>
           </Tooltip>
 
