@@ -33,3 +33,15 @@
 - services/api.ts: clearTokens() sekarang dispatch CustomEvent('auth:expired')
 - App.tsx: listen uth:expired → clear authUser + session → user lgsg liat login form
 
+
+## [2026-06-03] Chat jadi home — FAB, profile, settings, welcome screen
+- App.tsx: user dg patuihApiKey langsung ke Chat (welcome screen, bukan Lobby)
+- Chat.tsx: dua mode render — in-room (chat biasa) dan welcome (no room)
+- Chat.tsx: Floating Action Button (FAB) pojok kanan bawah — New Room, Join Room, Find by PIN
+- Chat.tsx: Profile Sheet — avatar (inisial), PIN, username, display name, status API Key
+- Chat.tsx: Settings Sheet — update Patuih API Key
+- Chat.tsx: Dialog Create Room + Join Room (modal)
+- Chat.tsx: Find by PIN — cari user via PIN 6 digit
+- Chat.tsx: Header in-room mode skrg ada icon Profile + Settings
+- AuthUser interface skrg include patuihApiKey, patuihTenantId
+- Updated SKILL.md — App flow + Chat patterns

@@ -30,13 +30,16 @@
 
 ### App (`App.tsx`)
 
-Root component with 3 states:
+Root component with 4 states:
 1. **OAuth Callback** — If URL path = `/oauth/callback`, render `OAuthCallback.tsx`
-2. **In Chat** — If `session` exists, render `Chat.tsx`
-3. **In Lobby** — Otherwise, render `Lobby.tsx`
+2. **In Chat (active room)** — If `session` exists, render `Chat.tsx`
+3. **In Chat (welcome)** — If `authUser` has `patuihApiKey`, render `Chat.tsx` with empty room (welcome screen + FAB)
+4. **In Lobby** — Otherwise, render `Lobby.tsx`
 
 Auth state (`authUser`) fetched from `/api/v1/auth/me` on mount if token exists in localStorage.
 Session (room) persisted to `localStorage` key `chat_session`.
+
+**Flow:** Login → Lobby (setup API key jika belum) → langsung ke Chat (welcome) → FAB → Create/Join Room → Chat (in-room)
 
 ### Lobby (`components/Lobby.tsx`)
 
@@ -70,11 +73,23 @@ sudah login (refresh halaman) → Room Selection
 
 ### Chat (`components/Chat.tsx`)
 
+Props: `user, room, apiKey, tenantId, userId?, authUser, onLeave, onEnterRoom, onLogout`
+
+**Dua mode render:**
+1. **In-Room** (`room` tidak kosong) — tampilan chat biasa + header dg profile/settings/copy/leave
+2. **Welcome** (`room` kosong) — layar selamat datang + FAB (New Room / Join Room / Find by PIN)
+
+**Fitur:**
 - Connect ke backend WS via `services/socket.ts` di `useEffect`
 - Kirim pesan via `sendMessage()` (WS) dengan fallback REST `api.post('/api/v1/chat/publish')`
 - Terima event dari server via `socket.on('event', ...)`
 - Cache messages di localStorage key `chat_messages_room_<roomId>`
 - Auto-inactivity leave setelah 10 menit
+- **Floating Action Button (FAB)** — tombol "+" pojok kanan bawah, buka menu: New Room, Join Room, Find by PIN
+- **Profile Sheet** — avatar (inisial), PIN, username, display name, status API Key
+- **Settings Sheet** — update Patuih API Key
+- **Create Room / Join Room** — dialog modal untuk buat/gabung room
+- **Find by PIN** — cari user via PIN 6 digit
 
 ## Phone Registration (OTP via SMS)
 

@@ -26,6 +26,8 @@ interface AuthUser {
   username: string
   displayName: string | null
   pin: string
+  patuihApiKey: string | null
+  patuihTenantId: string | null
 }
 
 interface Session {
@@ -40,10 +42,11 @@ interface LobbyProps {
   authUser: AuthUser | null
   onAuthSuccess: (user: AuthUser) => void
   onEnter: (s: Session) => void
+  onDirectChat: () => void
   onLogout: () => void
 }
 
-export default function Lobby({ authUser, onAuthSuccess, onEnter, onLogout }: LobbyProps) {
+export default function Lobby({ authUser, onAuthSuccess, onEnter, onDirectChat, onLogout }: LobbyProps) {
   const [tab, setTab] = useState<"join" | "create" | null>(null)
   const [name, setName] = useState(
     () => localStorage.getItem("chat_name") || ""
@@ -119,7 +122,7 @@ export default function Lobby({ authUser, onAuthSuccess, onEnter, onLogout }: Lo
 
       setTokens(accessToken, refreshToken)
       localStorage.setItem("chat_name", userData.displayName || userData.username)
-      onAuthSuccess({ id: userData.id, username: userData.username, displayName: userData.displayName, pin: userData.pin })
+      onAuthSuccess({ id: userData.id, username: userData.username, displayName: userData.displayName, pin: userData.pin, patuihApiKey: userData.patuihApiKey ?? null, patuihTenantId: userData.patuihTenantId ?? null })
 
       if (!userData.patuihApiKey || !userData.patuihTenantId) {
         setShowPatuihSetup(true)
@@ -157,7 +160,7 @@ export default function Lobby({ authUser, onAuthSuccess, onEnter, onLogout }: Lo
 
       setTokens(accessToken, refreshToken)
       localStorage.setItem("chat_name", userData.displayName || userData.username)
-      onAuthSuccess({ id: userData.id, username: userData.username, displayName: userData.displayName, pin: userData.pin })
+      onAuthSuccess({ id: userData.id, username: userData.username, displayName: userData.displayName, pin: userData.pin, patuihApiKey: userData.patuihApiKey ?? null, patuihTenantId: userData.patuihTenantId ?? null })
 
       if (!userData.patuihApiKey || !userData.patuihTenantId) {
         setShowPatuihSetup(true)
@@ -177,7 +180,9 @@ export default function Lobby({ authUser, onAuthSuccess, onEnter, onLogout }: Lo
       const n = name.trim() || "User"
       localStorage.setItem("chat_name", n)
       localStorage.setItem("chat_key", apiKey)
-      setShowPatuihSetup(false)
+      // Refetch user to get updated patuihApiKey
+      const updated = await api.get<AuthUser>("/api/v1/auth/me")
+      onAuthSuccess(updated)
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Failed to save API key")
     } finally {

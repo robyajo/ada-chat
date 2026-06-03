@@ -7,11 +7,13 @@ import "./App.css"
 
 const SESSION_KEY = "chat_session"
 
-interface AuthUser {
+export interface AuthUser {
   id: string
   username: string
   displayName: string | null
   pin: string
+  patuihApiKey: string | null
+  patuihTenantId: string | null
 }
 
 interface Session {
@@ -26,7 +28,9 @@ function loadSession(): Session | null {
   try {
     const raw = localStorage.getItem(SESSION_KEY)
     if (raw) return JSON.parse(raw)
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
   return null
 }
 
@@ -54,14 +58,22 @@ export default function App() {
     const at = localStorage.getItem("accessToken")
     if (!at) return
     let cancelled = false
-    api.get<{ id: string; username: string; displayName: string | null; pin: string }>("/api/v1/auth/me")
-      .then((user) => { if (!cancelled) setAuthUser(user) })
-      .catch(() => { if (!cancelled) clearTokens() })
-      .finally(() => { if (!cancelled) setAuthReady(true) })
-    return () => { cancelled = true }
+    api
+      .get<AuthUser>("/api/v1/auth/me")
+      .then((user) => {
+        if (!cancelled) setAuthUser(user)
+      })
+      .catch(() => {
+        if (!cancelled) clearTokens()
+      })
+      .finally(() => {
+        if (!cancelled) setAuthReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
   }, [isOAuthPath])
 
-  // Listen for session expiry from api.ts
   useEffect(() => {
     const handler = () => {
       setAuthUser(null)
@@ -86,6 +98,9 @@ export default function App() {
     )
   }
 
+  const hasApiKey = !!(authUser?.patuihApiKey && authUser?.patuihTenantId)
+
+  // If user has an active session (in a room), show Chat
   if (session) {
     return (
       <Chat
@@ -94,9 +109,41 @@ export default function App() {
         apiKey={session.apiKey}
         tenantId={session.tenantId}
         userId={session.userId}
+        authUser={authUser}
         onLeave={() => {
           setSession(null)
           saveSession(null)
+        }}
+        onEnterRoom={(s) => {
+          setSession(s)
+          saveSession(s)
+        }}
+        onLogout={() => {
+          setAuthUser(null)
+          clearTokens()
+        }}
+      />
+    )
+  }
+
+  // If authenticated AND has API key → Chat (no room = welcome screen)
+  if (authUser && hasApiKey) {
+    return (
+      <Chat
+        user={authUser.displayName || authUser.username}
+        room=""
+        apiKey={authUser.patuihApiKey!}
+        tenantId={authUser.patuihTenantId!}
+        userId={authUser.id}
+        authUser={authUser}
+        onLeave={() => {}}
+        onEnterRoom={(s) => {
+          setSession(s)
+          saveSession(s)
+        }}
+        onLogout={() => {
+          setAuthUser(null)
+          clearTokens()
         }}
       />
     )
@@ -109,6 +156,9 @@ export default function App() {
       onEnter={(s) => {
         setSession(s)
         saveSession(s)
+      }}
+      onDirectChat={() => {
+        // After setting up API key in Lobby, user goes to Chat
       }}
       onLogout={() => {
         setAuthUser(null)
