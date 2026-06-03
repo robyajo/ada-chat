@@ -45,3 +45,21 @@
 - Chat.tsx: Header in-room mode skrg ada icon Profile + Settings
 - AuthUser interface skrg include patuihApiKey, patuihTenantId
 - Updated SKILL.md — App flow + Chat patterns
+
+## [2026-06-03] Room management — sidebar room list, create room with name, room settings
+- Chat.tsx: fetch user rooms via GET /api/v1/chat/rooms on mount
+- Chat.tsx: handleSelectRoom — klik room di sidebar langsung pindah room
+- Chat.tsx: handleOpenRoomSettings — room settings sheet untuk owner (edit nama + manage members)
+- Chat.tsx: handleSaveRoomName + handleRemoveMember
+- Create Room dialog: tambah input Room Name (wajib), panggil POST /api/v1/chat/rooms
+
+## [2026-06-03] Create Room dialog — emoji avatar, invite by PIN, room name
+- Dialog Create Room: tambah emoji picker (12 emoji), input Room Name, Invite Friends by PIN
+- handleAddInvite: cari user by PIN, tambah ke invited list (dengan remove button)
+- handleCreateRoomApi: kirim avatarUrl, invite semua invitedUsers setelah room dibuat
+
+## [2026-06-03] Refactor Chat.tsx — extract ProfileSheet + SettingsSheet ke com-chat/
+- Created src/components/com-chat/ProfileSheet.tsx (default export)
+- Created src/components/com-chat/SettingsSheet.tsx (default export)
+- Chat.tsx imported them via import ProfileSheet/SettingsSheet
+- Chat.tsx shrunk ~60 lines

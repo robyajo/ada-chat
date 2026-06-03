@@ -122,6 +122,7 @@ export default function App() {
           setAuthUser(null)
           clearTokens()
         }}
+        onAuthSuccess={(user) => setAuthUser(user)}
       />
     )
   }
@@ -145,6 +146,7 @@ export default function App() {
           setAuthUser(null)
           clearTokens()
         }}
+        onAuthSuccess={(user) => setAuthUser(user)}
       />
     )
   }

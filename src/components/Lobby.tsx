@@ -46,7 +46,7 @@ interface LobbyProps {
   onLogout: () => void
 }
 
-export default function Lobby({ authUser, onAuthSuccess, onEnter, onDirectChat, onLogout }: LobbyProps) {
+export default function Lobby({ authUser, onAuthSuccess, onEnter, onLogout }: LobbyProps) {
   const [tab, setTab] = useState<"join" | "create" | null>(null)
   const [name, setName] = useState(
     () => localStorage.getItem("chat_name") || ""
@@ -419,9 +419,26 @@ export default function Lobby({ authUser, onAuthSuccess, onEnter, onDirectChat, 
                 <AlertDescription className="text-xs font-semibold">{error}</AlertDescription>
               </Alert>
             )}
-            <Button className="w-full h-11 rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500" onClick={handleSavePatuihKey} disabled={loading}>
-              {loading ? "Validating..." : "Save & Continue"}
-            </Button>
+            <div className="flex flex-col gap-2">
+              <Button className="w-full h-11 rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500" onClick={handleSavePatuihKey} disabled={loading}>
+                {loading ? "Validating..." : "Save & Continue"}
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full h-11 rounded-xl border border-slate-800 bg-slate-900/50 hover:bg-slate-900 text-slate-300 hover:text-white font-bold"
+                onClick={() => {
+                  onEnter({
+                    name: authUser?.displayName || authUser?.username || "User",
+                    room: "",
+                    apiKey: "",
+                    tenantId: "",
+                    userId: authUser?.id ?? "",
+                  })
+                }}
+              >
+                🚀 Gas to Lobby Chat
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -503,6 +520,22 @@ export default function Lobby({ authUser, onAuthSuccess, onEnter, onDirectChat, 
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
               Create New Room
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="flex w-full transform cursor-pointer items-center justify-center gap-2.5 rounded-xl border border-amber-500/35 bg-amber-500/5 py-6 font-semibold text-amber-400 transition-all duration-300 hover:-translate-y-0.5 hover:border-amber-400/50 hover:bg-amber-500/10 hover:text-amber-300"
+              onClick={() => {
+                onEnter({
+                  name: authUser?.displayName || authUser?.username || "User",
+                  room: "",
+                  apiKey: "",
+                  tenantId: "",
+                  userId: authUser?.id ?? "",
+                })
+              }}
+            >
+              🚀 Gas to Lobby Chat
             </Button>
             {authUser && (
               <Button variant="ghost" className="mt-2 text-xs text-slate-500 hover:text-slate-300" onClick={onLogout}>

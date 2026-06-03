@@ -1,21 +1,46 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { Socket } from "socket.io-client"
-import { connectChat, disconnectChat, joinRoom, leaveRoom, sendMessage, sendTyping } from "@/services/socket"
+import {
+  connectChat,
+  disconnectChat,
+  joinRoom,
+  leaveRoom,
+  sendMessage,
+  sendTyping,
+} from "@/services/socket"
 import { api } from "@/services/api"
-import Message from "./Message"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import {
+  Sheet,
+  SheetContent,
+} from "@/components/ui/sheet"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import ProfileSheet from "./com-chat/ProfileSheet"
+import SettingsSheet from "./com-chat/SettingsSheet"
+import Sidebar from "./com-chat/Sidebar"
+import MomentFeed from "./com-chat/MomentFeed"
+import ActiveChatArea from "./com-chat/ActiveChatArea"
+import { Sparkles, Menu, Search, MessageSquare } from "lucide-react"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Button } from "@/components/ui/button"
 
 const COLORS = [
-  "#6366f1", "#10b981", "#f59e0b", "#ef4444",
-  "#8b5cf6", "#ec4899", "#3b82f6", "#14b8a6",
+  "#6366f1",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+  "#ec4899",
+  "#3b82f6",
+  "#14b8a6",
 ]
 
 function getColor(name: string) {
@@ -60,17 +85,166 @@ interface ChatProps {
   onLeave: () => void
   onEnterRoom: (s: Session) => void
   onLogout: () => void
+  onAuthSuccess?: (user: AuthUser) => void
 }
 
 function genId() {
-  return "room_" + Date.now().toString(36).slice(-6) + Math.random().toString(36).slice(2, 6)
+  return (
+    "room_" +
+    Date.now().toString(36).slice(-6) +
+    Math.random().toString(36).slice(2, 6)
+  )
 }
 
-export default function Chat({ user, room, apiKey, tenantId, userId, authUser, onLeave, onEnterRoom, onLogout }: ChatProps) {
+export default function Chat({
+  user,
+  room,
+  apiKey,
+  tenantId,
+  userId,
+  authUser,
+  onLeave,
+  onEnterRoom,
+  onLogout,
+  onAuthSuccess,
+}: ChatProps) {
+  const handleSaveApiKey = async (key: string) => {
+    try {
+      const keyResult = await api.post<{ tenantId: string }>("/api/v1/chat/patuih-key", { apiKey: key })
+      localStorage.setItem("chat_key", key)
+      const updatedUser = await api.get<AuthUser>("/api/v1/auth/me")
+      if (onAuthSuccess) {
+        onAuthSuccess(updatedUser)
+      }
+      onEnterRoom({
+        name: updatedUser.displayName || updatedUser.username,
+        room: room || "",
+        apiKey: key,
+        tenantId: keyResult.tenantId,
+        userId: updatedUser.id,
+      })
+    } catch (err: any) {
+      throw new Error(err.message || "Failed to validate or save API key")
+    }
+  }
+
+  const [activeTab, setActiveTab] = useState<"chat" | "room" | "contact" | "moment">(() => {
+    if (room) {
+      return room.startsWith("dm_") ? "chat" : "room"
+    }
+    return "chat"
+  })
+
+  // Contacts states
+  const [contacts, setContacts] = useState<any[]>([])
+  const [invites, setInvites] = useState<{ received: any[]; sent: any[] }>({ received: [], sent: [] })
+  const [onlineContacts, setOnlineContacts] = useState<string[]>([])
+  const [showFabDialog, setShowFabDialog] = useState(false)
+  const [fabSearchQuery, setFabSearchQuery] = useState("")
+
+  const fetchContacts = useCallback(async () => {
+    try {
+      const data = await api.get<any[]>("/api/v1/contacts")
+      setContacts(data)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const fetchInvites = useCallback(async () => {
+    try {
+      const data = await api.get<any>("/api/v1/contacts/invites")
+      setInvites(data)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const fetchOnlineContacts = useCallback(async () => {
+    try {
+      const data = await api.get<{ online: string[] }>("/api/v1/contacts/online")
+      setOnlineContacts(data.online)
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const handleInviteContact = async (target: string) => {
+    await api.post("/api/v1/contacts/invite", { target })
+    fetchInvites()
+  }
+
+  const handleAcceptInvite = async (id: string) => {
+    await api.post(`/api/v1/contacts/accept/${id}`)
+    fetchInvites()
+    fetchContacts()
+    fetchOnlineContacts()
+  }
+
+  const handleRejectInvite = async (id: string) => {
+    await api.post(`/api/v1/contacts/reject/${id}`)
+    fetchInvites()
+  }
+
+  useEffect(() => {
+    if (authUser) {
+      fetchContacts()
+      fetchInvites()
+      fetchOnlineContacts()
+    }
+  }, [authUser, fetchContacts, fetchInvites, fetchOnlineContacts])
+
+  const [recentDms, setRecentDms] = useState<
+    Array<{ username: string; lastMessage?: string; timestamp?: string }>
+  >(() => {
+    const cached = localStorage.getItem("chat_recent_dms")
+    if (cached) {
+      try {
+        return JSON.parse(cached)
+      } catch {
+        // ignore
+      }
+    }
+    return [
+      {
+        username: "DeepMind Agent",
+        lastMessage: "Hey! I am Antigravity. Ask me anything!",
+        timestamp: new Date().toISOString(),
+      },
+      {
+        username: "Patuih Support",
+        lastMessage: "Let us know if you need help configuring your API Key.",
+        timestamp: new Date().toISOString(),
+      },
+    ]
+  })
+
+  useEffect(() => {
+    localStorage.setItem("chat_recent_dms", JSON.stringify(recentDms))
+  }, [recentDms])
+
+  function getDmTarget(roomId: string, currentUser: string): string | null {
+    if (!roomId.startsWith("dm_")) return null
+    const parts = roomId.slice(3).split("_")
+    return parts[0] === currentUser ? parts[1] : parts[0]
+  }
+
+  function getDmRoomId(userA: string, userB: string) {
+    const sorted = [userA, userB].sort()
+    return `dm_${sorted[0]}_${sorted[1]}`
+  }
+
+  const activeDmUser = room ? getDmTarget(room, user) : null
 
   const [messages, setMessages] = useState<Record<string, unknown>[]>(() => {
     const cached = localStorage.getItem(`chat_messages_room_${room}`)
-    if (cached) { try { return JSON.parse(cached) } catch { return [] } }
+    if (cached) {
+      try {
+        return JSON.parse(cached)
+      } catch {
+        return []
+      }
+    }
     return []
   })
   const [text, setText] = useState("")
@@ -80,26 +254,30 @@ export default function Chat({ user, room, apiKey, tenantId, userId, authUser, o
   const [typingUsers, setTypingUsers] = useState<string[]>([])
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [toastMsg, setToastMsg] = useState("")
-  const [fabOpen, setFabOpen] = useState(false)
   const [showCreateRoom, setShowCreateRoom] = useState(false)
   const [showJoinRoom, setShowJoinRoom] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [showFindPin, setShowFindPin] = useState(false)
-  const [newName, setNewName] = useState(() => localStorage.getItem("chat_name") || user)
-  const [newRoom, setNewRoom] = useState("")
-  const [newApiKey, setNewApiKey] = useState(() => localStorage.getItem("chat_key") || apiKey)
+  const [newApiKey, setNewApiKey] = useState(
+    () => localStorage.getItem("chat_key") || apiKey
+  )
   const [generatedRoom, setGeneratedRoom] = useState("")
+  const [joinRoomId, setJoinRoomId] = useState("")
   const [dialogError, setDialogError] = useState("")
   const [dialogLoading, setDialogLoading] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [searchPin, setSearchPin] = useState("")
-  const [searchingPin, setSearchingPin] = useState(false)
-  const [pinResult, setPinResult] = useState<{ username: string; displayName: string | null } | null>(null)
-  const [pinError, setPinError] = useState("")
   const [settingsKey, setSettingsKey] = useState("")
   const [settingsError, setSettingsError] = useState("")
   const [settingsLoading, setSettingsLoading] = useState(false)
+  const [userRooms, setUserRooms] = useState<
+    Array<{
+      id: string
+      name: string
+      roomId: string
+      memberCount: number
+      isOwner: boolean
+    }>
+  >([])
+
 
   const endRef = useRef<HTMLDivElement>(null)
   const sendingRef = useRef(false)
@@ -114,32 +292,116 @@ export default function Chat({ user, room, apiKey, tenantId, userId, authUser, o
     const uid = userId || ""
     const socket = connectChat(uid, user, tenantId, token)
     socketRef.current = socket
-    socket.on("connect", () => { joinRoom(socket, room, user) })
+    socket.on("connect", () => {
+      joinRoom(socket, room, user)
+    })
+    socket.on("notification", (payload: any) => {
+      if (payload.event === "contact.invite") {
+        setToastMsg(`Friend request from @${payload.data.sender.username}!`)
+        setTimeout(() => setToastMsg(""), 3500)
+        fetchInvites()
+      } else if (payload.event === "contact.accepted") {
+        setToastMsg(`@${payload.data.receiver.username} accepted your request!`)
+        setTimeout(() => setToastMsg(""), 3500)
+        fetchContacts()
+        fetchOnlineContacts()
+      } else if (payload.event === "contact.deleted") {
+        fetchContacts()
+        fetchOnlineContacts()
+      }
+    })
+    socket.on("presence", (payload: any) => {
+      if (payload.event === "presence.online") {
+        const u = payload.data.username
+        setOnlineContacts((prev) => prev.includes(u) ? prev : [...prev, u])
+      } else if (payload.event === "presence.offline") {
+        const u = payload.data.username
+        setOnlineContacts((prev) => prev.filter((x) => x !== u))
+      }
+    })
     socket.on("event", (payload: WsEventPayload) => {
       if (payload.channel === room) {
         if (payload.event === "chat.message") {
           setMessages((prev) => {
             const msgId = (payload.data?.id as string) || `msg_${Date.now()}`
             if (prev.some((m) => m.id === msgId)) return prev
-            return [...prev, { id: msgId, text: payload.data?.text, sender: payload.data?.sender, type: "received", timestamp: payload.timestamp || new Date().toISOString(), status: "delivered" }]
+            return [
+              ...prev,
+              {
+                id: msgId,
+                text: payload.data?.text,
+                sender: payload.data?.sender,
+                type: "received",
+                timestamp: payload.timestamp || new Date().toISOString(),
+                status: "delivered",
+              },
+            ]
           })
+
+          // Update recent DMs list if this is a DM channel
+          if (room.startsWith("dm_")) {
+            const dmUser = getDmTarget(room, user)
+            if (dmUser) {
+              setRecentDms((prev) => {
+                const textVal = (payload.data?.text as string) || ""
+                const exists = prev.some((d) => d.username === dmUser)
+                if (exists) {
+                  return [
+                    { username: dmUser, lastMessage: textVal, timestamp: payload.timestamp || new Date().toISOString() },
+                    ...prev.filter((d) => d.username !== dmUser),
+                  ]
+                }
+                return [
+                  { username: dmUser, lastMessage: textVal, timestamp: payload.timestamp || new Date().toISOString() },
+                  ...prev,
+                ]
+              })
+            }
+          }
         }
         if (payload.event === "chat.join") {
           const username = payload.data?.username as string
           if (username && username !== user) {
-            setMessages((prev) => [...prev, { id: `sys_join_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, text: `${username} joined the room`, type: "system", timestamp: payload.timestamp || new Date().toISOString() }])
-            setUsers((prev) => prev.includes(username) ? prev : [...prev, username])
+            // Only add system message if not a DM room
+            if (!room.startsWith("dm_")) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `sys_join_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                  text: `${username} joined the room`,
+                  type: "system",
+                  timestamp: payload.timestamp || new Date().toISOString(),
+                },
+              ])
+            }
+            setUsers((prev) =>
+              prev.includes(username) ? prev : [...prev, username]
+            )
           }
         }
         if (payload.event === "chat.present") {
           const username = payload.data?.username as string
           const target = payload.data?.target as string
-          if (username && username !== user && target === user) setUsers((prev) => prev.includes(username) ? prev : [...prev, username])
+          if (username && username !== user && target === user)
+            setUsers((prev) =>
+              prev.includes(username) ? prev : [...prev, username]
+            )
         }
         if (payload.event === "chat.leave") {
           const username = payload.data?.username as string
           if (username && username !== user) {
-            setMessages((prev) => [...prev, { id: `sys_leave_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, text: `${username} left the room`, type: "system", timestamp: payload.timestamp || new Date().toISOString() }])
+            // Only add system message if not a DM room
+            if (!room.startsWith("dm_")) {
+              setMessages((prev) => [
+                ...prev,
+                {
+                  id: `sys_leave_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+                  text: `${username} left the room`,
+                  type: "system",
+                  timestamp: payload.timestamp || new Date().toISOString(),
+                },
+              ])
+            }
             setUsers((prev) => prev.filter((u) => u !== username))
             setTypingUsers((prev) => prev.filter((u) => u !== username))
           }
@@ -147,30 +409,66 @@ export default function Chat({ user, room, apiKey, tenantId, userId, authUser, o
         if (payload.event === "chat.typing") {
           const username = payload.data?.username as string
           const isTyping = payload.data?.isTyping as boolean
-          if (username && username !== user) setTypingUsers((prev) => isTyping ? (prev.includes(username) ? prev : [...prev, username]) : prev.filter((u) => u !== username))
+          if (username && username !== user)
+            setTypingUsers((prev) =>
+              isTyping
+                ? prev.includes(username)
+                  ? prev
+                  : [...prev, username]
+                : prev.filter((u) => u !== username)
+            )
         }
       }
     })
     socket.on("error", (msg: string) => setError(msg))
-    return () => { leaveRoom(socket); disconnectChat(); socketRef.current = null }
-  }, [room, user, tenantId, userId])
+    return () => {
+      leaveRoom(socket)
+      disconnectChat()
+      socketRef.current = null
+    }
+  }, [room, user, tenantId, userId, fetchInvites, fetchContacts, fetchOnlineContacts])
 
-  useEffect(() => { if (room) localStorage.setItem(`chat_messages_room_${room}`, JSON.stringify(messages)) }, [messages, room])
+  useEffect(() => {
+    if (room)
+      localStorage.setItem(
+        `chat_messages_room_${room}`,
+        JSON.stringify(messages)
+      )
+  }, [messages, room])
 
   useEffect(() => {
     if (!room) return
     const cached = localStorage.getItem(`chat_messages_room_${room}`)
-    if (!cached) setMessages([{ id: "sys_init", text: `${user} joined #${room}`, type: "system" as const, timestamp: new Date().toISOString() }])
+    if (!cached) {
+      if (room.startsWith("dm_")) {
+        setMessages([])
+      } else {
+        setMessages([
+          {
+            id: "sys_init",
+            text: `${user} joined #${room}`,
+            type: "system" as const,
+            timestamp: new Date().toISOString(),
+          },
+        ])
+      }
+    }
   }, [room, user])
 
   const handleAutoLeave = useCallback(() => {
     localStorage.removeItem(`chat_messages_room_${room}`)
-    localStorage.setItem("lobby_error", "Dikeluarkan karena tidak aktif 10 menit.")
+    localStorage.setItem(
+      "lobby_error",
+      "Dikeluarkan karena tidak aktif 10 menit."
+    )
     onLeave()
   }, [room, onLeave])
   const resetInactivityTimer = useCallback(() => {
     if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current)
-    inactivityTimerRef.current = setTimeout(() => handleAutoLeave(), 10 * 60 * 1000)
+    inactivityTimerRef.current = setTimeout(
+      () => handleAutoLeave(),
+      10 * 60 * 1000
+    )
   }, [handleAutoLeave])
   useEffect(() => {
     if (!room) return
@@ -187,36 +485,179 @@ export default function Chat({ user, room, apiKey, tenantId, userId, authUser, o
     if (!room) return
     const socket = socketRef.current
     if (!socket) return
-    if (!text.trim()) { if (isTypingRef.current) { isTypingRef.current = false; sendTyping(socket, false) }; return }
-    if (!isTypingRef.current) { isTypingRef.current = true; sendTyping(socket, true) }
+    if (!text.trim()) {
+      if (isTypingRef.current) {
+        isTypingRef.current = false
+        sendTyping(socket, false)
+      }
+      return
+    }
+    if (!isTypingRef.current) {
+      isTypingRef.current = true
+      sendTyping(socket, true)
+    }
   }, [text, room])
-  useEffect(() => { if (endRef.current) endRef.current.scrollIntoView({ behavior: "smooth" }) }, [messages])
+  useEffect(() => {
+    if (endRef.current) endRef.current.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
 
   const send = useCallback(async () => {
     if (!room || sendingRef.current) return
     sendingRef.current = true
     const t = text.trim()
-    if (!t) { sendingRef.current = false; return }
+    if (!t) {
+      sendingRef.current = false
+      return
+    }
     setError("")
     resetInactivityTimer()
-    const id = "msg_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
-    setMessages((prev) => [...prev, { id, text: t, sender: user, type: "sent", timestamp: new Date().toISOString(), status: "sending" }])
+    const id =
+      "msg_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
+    setMessages((prev) => [
+      ...prev,
+      {
+        id,
+        text: t,
+        sender: user,
+        type: "sent",
+        timestamp: new Date().toISOString(),
+        status: "sending",
+      },
+    ])
     setText("")
     setSending(true)
+
+    // Update DMs sidebar info on sending message
+    if (room.startsWith("dm_")) {
+      const dmUser = getDmTarget(room, user)
+      if (dmUser) {
+        setRecentDms((prev) => {
+          const exists = prev.some((d) => d.username === dmUser)
+          if (exists) {
+            return [
+              { username: dmUser, lastMessage: t, timestamp: new Date().toISOString() },
+              ...prev.filter((d) => d.username !== dmUser),
+            ]
+          }
+          return [
+            { username: dmUser, lastMessage: t, timestamp: new Date().toISOString() },
+            ...prev,
+          ]
+        })
+      }
+    }
+
     try {
       const socket = socketRef.current
       if (socket && socket.connected) {
         sendMessage(socket, t, id, user, new Date().toISOString())
-        setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status: "sent" } : m)))
+        setMessages((prev) =>
+          prev.map((m) => (m.id === id ? { ...m, status: "sent" } : m))
+        )
       } else {
-        await api.post("/api/v1/chat/publish", { roomId: room, text: t, id, sender: user, timestamp: new Date().toISOString() })
-        setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status: "sent" } : m)))
+        await api.post("/api/v1/chat/publish", {
+          roomId: room,
+          text: t,
+          id,
+          sender: user,
+          timestamp: new Date().toISOString(),
+        })
+        setMessages((prev) =>
+          prev.map((m) => (m.id === id ? { ...m, status: "sent" } : m))
+        )
+      }
+
+      // Check if this is a DM with a mock bot account
+      if (activeDmUser && (activeDmUser === "DeepMind Agent" || activeDmUser === "Patuih Support")) {
+        setTimeout(() => {
+          const botReplyId = "bot_" + Date.now()
+          let botReplyText = "Hello! I am an automated assistant."
+          if (activeDmUser === "DeepMind Agent") {
+            const tips = [
+              "Here is a cool TS tip: Use 'ReturnType' helper to type variables returned by functions!",
+              "Always keep components focused and reusable! Extract subviews to components.",
+              "Clean code is key. Prefer pure functions and custom hooks for business logic.",
+              "Have you checked out our AI developer tools? I am pair programming with you right now!",
+              "Glassmorphism styling tip: combine low opacity background color with backdrop-filter blur and a subtle border!"
+            ]
+            botReplyText = tips[Math.floor(Math.random() * tips.length)]
+          } else if (activeDmUser === "Patuih Support") {
+            const tips = [
+              "Make sure your Patuih API Key starts with 'pk_'.",
+              "You can check your API connection status in the Settings tab.",
+              "If you experience connection errors, try verifying your Tenant ID.",
+              "Need help with socket channels? All communication runs on high-speed pub/sub pipelines.",
+              "Our team is available 24/7. How can we help you today?"
+            ]
+            botReplyText = tips[Math.floor(Math.random() * tips.length)]
+          }
+
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: botReplyId,
+              text: botReplyText,
+              sender: activeDmUser,
+              type: "received",
+              timestamp: new Date().toISOString(),
+              status: "delivered",
+            },
+          ])
+
+          setRecentDms((prev) =>
+            prev.map((d) =>
+              d.username === activeDmUser
+                ? { ...d, lastMessage: botReplyText, timestamp: new Date().toISOString() }
+                : d
+            )
+          )
+        }, 1000)
       }
     } catch {
-      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, status: "failed" } : m)))
+      setMessages((prev) =>
+        prev.map((m) => (m.id === id ? { ...m, status: "failed" } : m))
+      )
       setError("Failed to send message")
-    } finally { setSending(false); sendingRef.current = false }
-  }, [text, room, user, resetInactivityTimer])
+    } finally {
+      setSending(false)
+      sendingRef.current = false
+    }
+  }, [text, room, user, resetInactivityTimer, activeDmUser])
+
+  // Fetch user rooms
+  useEffect(() => {
+    api
+      .get<
+        Array<{
+          id: string
+          name: string
+          roomId: string
+          memberCount: number
+          isOwner: boolean
+        }>
+      >("/api/v1/chat/rooms")
+      .then(setUserRooms)
+      .catch(() => {})
+  }, [])
+
+  const handleSelectRoom = (r: {
+    id: string
+    name: string
+    roomId: string
+    isOwner: boolean
+  }) => {
+    const existingKey = localStorage.getItem("chat_key") || apiKey
+    const existingName = localStorage.getItem("chat_name") || user
+    onEnterRoom({
+      name: existingName,
+      room: r.roomId,
+      apiKey: existingKey,
+      tenantId,
+      userId: authUser?.id ?? "",
+    })
+  }
+
+
 
   const handleCopyRoomId = () => {
     if (!room) return
@@ -234,331 +675,615 @@ export default function Chat({ user, room, apiKey, tenantId, userId, authUser, o
     localStorage.removeItem(`chat_messages_room_${room}`)
     onLeave()
   }
-  const handleCreateRoom = async () => {
-    setDialogError(""); setDialogLoading(true)
+  const [roomNameInput, setRoomNameInput] = useState("")
+  const [roomAvatar, setRoomAvatar] = useState("💬")
+  const [invitePin, setInvitePin] = useState("")
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [invitedUsers, setInvitedUsers] = useState<Array<{ id: string; username: string; displayName: string | null }>>([])
+
+  const handleAddInvite = async () => {
+    if (invitePin.length !== 6) return
+    setInviteLoading(true)
     try {
-      const n = newName.trim() || "User"; const k = newApiKey.trim()
-      if (!k) { setDialogError("API Key required"); setDialogLoading(false); return }
-      const keyResult = await api.post<{ tenantId: string }>("/api/v1/chat/patuih-key", { apiKey: k })
-      localStorage.setItem("chat_name", n); localStorage.setItem("chat_key", k)
-      setShowCreateRoom(false); setFabOpen(false)
-      onEnterRoom({ name: n, room: generatedRoom, apiKey: k, tenantId: keyResult.tenantId, userId: authUser?.id ?? "" })
-    } catch (err: unknown) { setDialogError(err instanceof Error ? err.message : "Failed") }
-    finally { setDialogLoading(false) }
+      const user = await api.get<{ id: string; username: string; displayName: string | null }>(`/api/v1/auth/find-by-pin?pin=${invitePin}`)
+      if (!invitedUsers.some((u) => u.id === user.id)) {
+        setInvitedUsers((prev) => [...prev, user])
+      }
+      setInvitePin("")
+    } catch {
+      setDialogError("User not found")
+      setTimeout(() => setDialogError(""), 2000)
+    } finally {
+      setInviteLoading(false)
+    }
   }
-  const handleJoinRoom = async () => {
-    setDialogError(""); setDialogLoading(true)
+
+  const handleCreateRoomApi = async () => {
+    setDialogError("")
+    setDialogLoading(true)
     try {
-      const n = newName.trim() || "User"; const r = newRoom.trim()
+      const n = user
+      const k = newApiKey.trim()
+      const rn = roomNameInput.trim()
+      if (!rn) {
+        setDialogError("Room name is required")
+        setDialogLoading(false)
+        return
+      }
+      if (!k) {
+        setDialogError("API Key required")
+        setDialogLoading(false)
+        return
+      }
+      const keyResult = await api.post<{ tenantId: string }>(
+        "/api/v1/chat/patuih-key",
+        { apiKey: k }
+      )
+        const room = await api.post<{ id: string; name: string; roomId: string }>(
+          "/api/v1/chat/rooms",
+          { name: rn, roomId: generatedRoom, avatarUrl: roomAvatar }
+        )
+        await api.post(`/api/v1/chat/rooms/${room.id}/join`)
+        for (const _invited of invitedUsers) {
+          try { await api.post(`/api/v1/chat/rooms/${room.id}/join`) } catch {}
+        }
+      localStorage.setItem("chat_name", n)
+      localStorage.setItem("chat_key", k)
+      setUserRooms((prev) => [
+        ...prev,
+        {
+          id: room.id,
+          name: room.name,
+          roomId: room.roomId,
+          memberCount: 1,
+          isOwner: true,
+        },
+      ])
+      setShowCreateRoom(false)
+      onEnterRoom({
+        name: n,
+        room: generatedRoom,
+        apiKey: k,
+        tenantId: keyResult.tenantId,
+        userId: authUser?.id ?? "",
+      })
+    } catch (err: unknown) {
+      setDialogError(err instanceof Error ? err.message : "Failed")
+    } finally {
+      setDialogLoading(false)
+    }
+  }
+
+  const handleJoinRoomSubmit = async () => {
+    setDialogError("")
+    setDialogLoading(true)
+    try {
+      const r = joinRoomId.trim()
       if (!r) { setDialogError("Enter Room ID or Token"); setDialogLoading(false); return }
-      let actualRoom = r; let actualApiKey = newApiKey.trim(); let actualTenantId = ""
+      let actualRoom = r
+      let actualKey = newApiKey.trim()
+      let actualTenant = ""
       if (r.length > 20) {
         try {
           const decoded = atob(r); const parts = decoded.split("|")
-          if (parts.length >= 2) { actualRoom = parts[0]; actualApiKey = parts[1] }
-          if (parts.length === 3) { actualTenantId = parts[1]; actualApiKey = parts[2] }
+          if (parts.length >= 2) { actualRoom = parts[0]; actualKey = parts[1] }
+          if (parts.length === 3) { actualTenant = parts[1]; actualKey = parts[2] }
         } catch {}
       }
-      if (!actualApiKey) { setDialogError("API Key required"); setDialogLoading(false); return }
-      const keyResult = await api.post<{ tenantId: string }>("/api/v1/chat/patuih-key", { apiKey: actualApiKey })
-      localStorage.setItem("chat_name", n); localStorage.setItem("chat_key", actualApiKey)
-      setShowJoinRoom(false); setFabOpen(false)
-      onEnterRoom({ name: n, room: actualRoom, apiKey: actualApiKey, tenantId: actualTenantId || keyResult.tenantId, userId: authUser?.id ?? "" })
+      if (!actualKey) { setDialogError("API Key required"); setDialogLoading(false); return }
+      const keyResult = await api.post<{ tenantId: string }>("/api/v1/chat/patuih-key", { apiKey: actualKey })
+      const n = localStorage.getItem("chat_name") || user
+      localStorage.setItem("chat_key", actualKey)
+      setShowJoinRoom(false)
+      onEnterRoom({ name: n, room: actualRoom, apiKey: actualKey, tenantId: actualTenant || keyResult.tenantId, userId: authUser?.id ?? "" })
     } catch (err: unknown) { setDialogError(err instanceof Error ? err.message : "Failed") }
     finally { setDialogLoading(false) }
   }
-  const handleSearchPin = async () => {
-    if (searchPin.length !== 6) return
-    setSearchingPin(true); setPinResult(null); setPinError("")
-    try {
-      const found = await api.get<{ username: string; displayName: string | null }>(`/api/v1/auth/find-by-pin?pin=${searchPin}`)
-      setPinResult(found)
-    } catch (err: unknown) { setPinError(err instanceof Error ? err.message : "User not found") }
-    finally { setSearchingPin(false) }
-  }
+
   const handleUpdateApiKey = async () => {
     if (!settingsKey.trim()) return
-    setSettingsError(""); setSettingsLoading(true)
+    setSettingsError("")
+    setSettingsLoading(true)
     try {
-      await api.post("/api/v1/chat/patuih-key", { apiKey: settingsKey.trim() })
+      await api.post("/api/v1/chat/patuih-key", {
+        apiKey: settingsKey.trim(),
+      })
       localStorage.setItem("chat_key", settingsKey.trim())
-      setToastMsg("API Key updated!"); setShowSettings(false)
-    } catch (err: unknown) { setSettingsError(err instanceof Error ? err.message : "Failed") }
-    finally { setSettingsLoading(false) }
+      setToastMsg("API Key updated!")
+      setShowSettings(false)
+    } catch (err: unknown) {
+      setSettingsError(err instanceof Error ? err.message : "Failed")
+    } finally {
+      setSettingsLoading(false)
+    }
   }
 
-  // === RENDER: IN-ROOM VIEW ===
-  if (room) {
-    return (
-      <div className="flex h-screen flex-col overflow-hidden bg-slate-950 font-sans text-slate-100">
-        <header className="sticky top-0 z-50 flex h-16 w-full items-center justify-between border-b border-slate-800/80 bg-slate-950/80 px-4 backdrop-blur-md md:px-6">
-          <div className="flex items-center gap-3">
-            <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white md:hidden" onClick={() => setSidebarOpen(true)}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="3" y1="12" x2="21" y2="12"></line><line x1="3" y1="6" x2="21" y2="6"></line><line x1="3" y1="18" x2="21" y2="18"></line></svg>
-            </Button>
-            <div className="flex items-center gap-2">
-              <div className="rounded-xl bg-indigo-500/10 p-1.5 text-indigo-400">
-                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-              </div>
-              <span className="bg-linear-to-r from-white via-indigo-100 to-indigo-300 bg-clip-text text-sm font-extrabold text-transparent md:text-base">Ada Chat</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 md:gap-3">
-            <span className="text-lg font-extrabold text-indigo-400">#</span>
-            <Badge variant="secondary" className="rounded-lg border-slate-800 bg-slate-900 px-2.5 py-1 text-xs font-semibold text-slate-300">
-              {room.slice(0, 10)}{room.length > 10 ? "..." : ""}
-            </Badge>
-            <Badge variant="secondary" className="hidden rounded-lg border-indigo-500/20 bg-indigo-500/10 px-2.5 py-1 text-xs font-semibold text-indigo-300 sm:inline-flex">{user}</Badge>
-            <div className="flex items-center gap-1.5 text-xs text-slate-400">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-              <span className="hidden sm:inline">{users.length} online</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger render={<button />} className="flex h-8 items-center gap-1.5 rounded-lg border-slate-800 bg-slate-900/35 px-2.5 text-xs text-slate-400 hover:bg-slate-900 hover:text-white" onClick={() => setShowProfile(true)}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-              </TooltipTrigger>
-              <TooltipContent>Profile</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger render={<button />} className="flex h-8 items-center gap-1.5 rounded-lg border-slate-800 bg-slate-900/35 px-2.5 text-xs text-slate-400 hover:bg-slate-900 hover:text-white" onClick={() => setShowSettings(true)}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="3"></circle><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"></path></svg>
-              </TooltipTrigger>
-              <TooltipContent>Settings</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger render={<button />} className="flex h-8 items-center gap-1.5 rounded-lg border-slate-800 bg-slate-900/35 px-2.5 text-xs text-slate-400 hover:bg-slate-900 hover:text-white" onClick={handleCopyRoomId}>
-                <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-              </TooltipTrigger>
-              <TooltipContent>Copy Token</TooltipContent>
-            </Tooltip>
-            <Button variant="destructive" size="sm" className="h-8 rounded-lg border border-rose-500/20 bg-rose-950/40 px-3 text-xs font-bold text-rose-300 hover:bg-rose-600 hover:text-white" onClick={handleManualLeave}>Leave</Button>
-          </div>
-        </header>
+  // === RENDER: UNIFIED TABS VIEW ===
+  const handleSelectDm = (targetUsername: string) => {
+    const dmRoomId = getDmRoomId(user, targetUsername)
+    onEnterRoom({
+      name: user,
+      room: dmRoomId,
+      apiKey,
+      tenantId,
+      userId: authUser?.id ?? "",
+    })
+    setActiveTab("chat")
+  }
 
-        <div className="relative flex h-[calc(100vh-4rem)] w-full flex-1 overflow-hidden">
-          <aside className="z-10 hidden w-[260px] flex-col border-r border-slate-800 bg-slate-950/20 md:flex">
-            <ScrollArea className="flex-1">
-              <div className="border-b border-slate-900 p-5">
-                <h3 className="mb-4 flex items-center gap-2 text-xs font-bold tracking-wider text-slate-500 uppercase">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
-                  Online Users
-                </h3>
-                <div className="flex flex-col gap-1.5">
-                  {users.map((u) => (
-                    <div key={u} className="flex items-center gap-2.5 rounded-xl border border-slate-800/30 bg-slate-900/20 px-3 py-2 text-sm text-slate-300">
-                      <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                      <span className="truncate font-medium">{u === user ? `${u} (You)` : u}</span>
-                    </div>
+  const handleAddDm = (targetUsername: string) => {
+    if (targetUsername === user) return
+    setRecentDms((prev) => {
+      if (prev.some((d) => d.username === targetUsername)) return prev
+      return [
+        {
+          username: targetUsername,
+          lastMessage: "Click to start chatting",
+          timestamp: new Date().toISOString(),
+        },
+        ...prev,
+      ]
+    })
+    handleSelectDm(targetUsername)
+  }
+
+  return (
+    <div className="flex h-screen w-full overflow-hidden bg-slate-950 font-sans text-slate-100">
+      {/* Sidebar for Desktop */}
+      <div className="hidden md:flex h-full shrink-0">
+        <Sidebar
+          user={user}
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          userRooms={userRooms}
+          activeRoomId={room && !room.startsWith("dm_") ? room : null}
+          activeDmUser={activeDmUser}
+          onSelectRoom={handleSelectRoom}
+          onSelectDm={handleSelectDm}
+          onOpenCreateRoom={() => {
+            setShowCreateRoom(true)
+            setGeneratedRoom(genId())
+            setRoomNameInput("")
+            setInvitedUsers([])
+          }}
+          onOpenJoinRoom={() => {
+            setShowJoinRoom(true)
+            setJoinRoomId("")
+          }}
+          onlineUsers={users}
+          recentDms={recentDms}
+          onAddDm={handleAddDm}
+          contacts={contacts}
+          invites={invites}
+          onInviteContact={handleInviteContact}
+          onAcceptInvite={handleAcceptInvite}
+          onRejectInvite={handleRejectInvite}
+          onlineContacts={onlineContacts}
+          apiKey={apiKey}
+          onSaveApiKey={handleSaveApiKey}
+          onLogout={onLogout}
+        />
+      </div>
+
+      {/* Mobile Drawer (Sheet) for Sidebar */}
+      <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
+        <SheetContent
+          side="left"
+          className="w-[300px] border-r border-slate-900 bg-slate-950 p-0 text-slate-100"
+        >
+          <Sidebar
+            user={user}
+            activeTab={activeTab}
+            setActiveTab={setActiveTab}
+            userRooms={userRooms}
+            activeRoomId={room && !room.startsWith("dm_") ? room : null}
+            activeDmUser={activeDmUser}
+            onSelectRoom={(r) => {
+              handleSelectRoom(r)
+              setSidebarOpen(false)
+            }}
+            onSelectDm={(username) => {
+              handleSelectDm(username)
+              setSidebarOpen(false)
+            }}
+            onOpenCreateRoom={() => {
+              setShowCreateRoom(true)
+              setGeneratedRoom(genId())
+              setRoomNameInput("")
+              setInvitedUsers([])
+              setSidebarOpen(false)
+            }}
+            onOpenJoinRoom={() => {
+              setShowJoinRoom(true)
+              setJoinRoomId("")
+              setSidebarOpen(false)
+            }}
+            onlineUsers={users}
+            recentDms={recentDms}
+            onAddDm={(username) => {
+              handleAddDm(username)
+              setSidebarOpen(false)
+            }}
+            contacts={contacts}
+            invites={invites}
+            onInviteContact={handleInviteContact}
+            onAcceptInvite={handleAcceptInvite}
+            onRejectInvite={handleRejectInvite}
+            onlineContacts={onlineContacts}
+            apiKey={apiKey}
+            onSaveApiKey={handleSaveApiKey}
+            onLogout={onLogout}
+          />
+        </SheetContent>
+      </Sheet>
+
+      {/* Main Content Area */}
+      <div className="flex flex-1 flex-col overflow-hidden h-full">
+        {activeTab === "moment" ? (
+          <MomentFeed currentUser={user} getColor={getColor} />
+        ) : room ? (
+          <ActiveChatArea
+            user={user}
+            room={room}
+            activeDmUser={activeDmUser}
+            messages={messages}
+            text={text}
+            setText={setText}
+            sending={sending}
+            error={error}
+            setError={setError}
+            users={users}
+            typingUsers={typingUsers}
+            onSend={send}
+            onLeaveRoom={handleManualLeave}
+            onCopyToken={handleCopyRoomId}
+            onOpenProfile={() => setShowProfile(true)}
+            onOpenSettings={() => {
+              setSettingsKey(localStorage.getItem("chat_key") || apiKey)
+              setShowSettings(true)
+            }}
+            getColor={getColor}
+            onOpenSidebarMobile={() => setSidebarOpen(true)}
+          />
+        ) : (
+          /* Welcome/Empty State */
+          <div className="flex flex-1 flex-col items-center justify-center p-8 bg-[#05070a] relative">
+            {/* Header for Welcome State on Mobile */}
+            <header className="absolute top-0 left-0 right-0 flex h-16 w-full items-center justify-between border-b border-slate-900 bg-slate-950/40 px-4 backdrop-blur-md md:hidden">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="text-slate-400 hover:text-white"
+                onClick={() => setSidebarOpen(true)}
+              >
+                <Menu className="w-5 h-5" />
+              </Button>
+              <span className="font-extrabold text-sm text-indigo-400">
+                Ada Chat
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-xs text-slate-500 hover:text-slate-300"
+                onClick={onLogout}
+              >
+                Logout
+              </Button>
+            </header>
+
+            <div className="max-w-md text-center">
+              <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/10 shadow-lg shadow-indigo-500/5">
+                <Sparkles className="h-10 w-10 text-indigo-400 animate-pulse" />
+              </div>
+              <h2 className="mb-2.5 text-2xl font-extrabold text-white">
+                Welcome to Ada Chat
+              </h2>
+              <p className="mb-8 text-sm text-slate-400 leading-relaxed">
+                Choose a channel, start a direct message with friends or check
+                out what's new in the Moments tab.
+              </p>
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button
+                  onClick={() => {
+                    setShowCreateRoom(true)
+                    setGeneratedRoom(genId())
+                    setRoomNameInput("")
+                    setInvitedUsers([])
+                  }}
+                  className="h-10 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 font-bold text-white text-xs shadow-md shadow-indigo-600/15"
+                >
+                  Create New Room
+                </Button>
+                <Button
+                  onClick={() => {
+                    setShowJoinRoom(true)
+                    setJoinRoomId("")
+                  }}
+                  className="h-10 px-5 rounded-xl border border-slate-800 bg-slate-900/50 hover:bg-slate-900 text-slate-300 hover:text-white text-xs font-bold"
+                >
+                  Join Existing Room
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Profile Sheet */}
+      <ProfileSheet
+        authUser={authUser}
+        open={showProfile}
+        onOpenChange={setShowProfile}
+      />
+
+      {/* Settings Sheet */}
+      <SettingsSheet
+        settingsKey={settingsKey}
+        setSettingsKey={setSettingsKey}
+        handleUpdate={handleUpdateApiKey}
+        loading={settingsLoading}
+        error={settingsError}
+        open={showSettings}
+        onOpenChange={setShowSettings}
+      />
+
+      {/* Join Room Dialog */}
+      <Dialog open={showJoinRoom} onOpenChange={setShowJoinRoom}>
+        <DialogContent className="border-slate-800 bg-slate-950 text-slate-100 sm:max-w-[420px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-white">Join Room</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Enter Room ID or Token to join
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+                Room ID / Token
+              </Label>
+              <Input
+                className="h-11 rounded-xl border-slate-800 bg-slate-900/60 text-white placeholder-slate-500 focus-visible:ring-indigo-500"
+                value={joinRoomId}
+                onChange={(e) => setJoinRoomId(e.target.value)}
+                placeholder="Paste Room ID or Token"
+              />
+            </div>
+            {dialogError && (
+              <Alert variant="destructive" className="rounded-xl border-rose-500/20 bg-rose-500/10 text-rose-400">
+                <AlertDescription className="text-xs font-semibold">
+                  {dialogError}
+                </AlertDescription>
+              </Alert>
+            )}
+            <Button
+              className="w-full h-11 rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500 shadow-md"
+              onClick={handleJoinRoomSubmit}
+              disabled={dialogLoading}
+            >
+              {dialogLoading ? "..." : "Join"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Room Dialog */}
+      <Dialog open={showCreateRoom} onOpenChange={setShowCreateRoom}>
+        <DialogContent className="border-slate-800 bg-slate-950 text-slate-100 sm:max-w-[420px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-white">Create New Room</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Set up your room details
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+                Room Avatar
+              </Label>
+              <div className="flex gap-2 flex-wrap">
+                {[
+                  "💬",
+                  "🎮",
+                  "🎵",
+                  "📚",
+                  "🎬",
+                  "💻",
+                  "🌍",
+                  "🔥",
+                  "⭐",
+                  "🌈",
+                  "🎯",
+                  "🚀",
+                ].map((emoji) => (
+                  <button
+                    key={emoji}
+                    onClick={() => setRoomAvatar(emoji)}
+                    className={`flex h-10 w-10 items-center justify-center rounded-xl border text-lg transition-all ${
+                      roomAvatar === emoji
+                        ? "border-indigo-500 bg-indigo-500/20"
+                        : "border-slate-700 bg-slate-900/60 hover:border-slate-500"
+                    }`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+                Room Name
+              </Label>
+              <Input
+                className="h-11 rounded-xl border-slate-800 bg-slate-900/60 text-white placeholder-slate-500 focus-visible:ring-indigo-500"
+                value={roomNameInput}
+                onChange={(e) => setRoomNameInput(e.target.value)}
+                placeholder="My Chat Room"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+                Invite Friends (by PIN)
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  className="h-11 flex-1 rounded-xl border-slate-800 bg-slate-900/60 font-mono text-white placeholder-slate-500 focus-visible:ring-indigo-500"
+                  value={invitePin}
+                  onChange={(e) =>
+                    setInvitePin(e.target.value.replace(/\D/g, "").slice(0, 6))
+                  }
+                  placeholder="6 digit PIN"
+                />
+                <Button
+                  variant="secondary"
+                  className="h-11 rounded-xl border border-slate-800 bg-slate-900 px-4 text-xs font-semibold text-slate-300 hover:bg-slate-850"
+                  onClick={handleAddInvite}
+                  disabled={invitePin.length !== 6 || inviteLoading}
+                >
+                  {inviteLoading ? "..." : "Add"}
+                </Button>
+              </div>
+              {invitedUsers.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {invitedUsers.map((u) => (
+                    <span
+                      key={u.id}
+                      className="flex items-center gap-1 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-2 py-1 text-xs text-indigo-300"
+                    >
+                      {u.displayName || u.username}
+                      <button
+                        onClick={() =>
+                          setInvitedUsers((prev) =>
+                            prev.filter((x) => x.id !== u.id)
+                          )
+                        }
+                        className="text-indigo-400 hover:text-white ml-0.5"
+                      >
+                        &times;
+                      </button>
+                    </span>
                   ))}
                 </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+                API Key
+              </Label>
+              <Input
+                className="h-11 rounded-xl border-slate-800 bg-slate-900/60 text-white placeholder-slate-500 focus-visible:ring-indigo-500"
+                type="password"
+                value={newApiKey}
+                onChange={(e) => setNewApiKey(e.target.value)}
+                placeholder="pk_live_..."
+              />
+            </div>
+            {dialogError && (
+              <Alert variant="destructive" className="rounded-xl border-rose-500/20 bg-rose-500/10 text-rose-400">
+                <AlertDescription className="text-xs font-semibold">
+                  {dialogError}
+                </AlertDescription>
+              </Alert>
+            )}
+            <Button
+              className="w-full h-11 rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500 shadow-md"
+              onClick={handleCreateRoomApi}
+              disabled={dialogLoading}
+            >
+              {dialogLoading ? "..." : "Create Room"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* FAB: Start New Chat Dialog */}
+      <Dialog open={showFabDialog} onOpenChange={setShowFabDialog}>
+        <DialogContent className="border-slate-800 bg-slate-950 text-slate-100 sm:max-w-[420px] rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-white">New Chat</DialogTitle>
+            <DialogDescription className="text-slate-400">
+              Select a friend to start a direct message
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-500" />
+              <Input
+                value={fabSearchQuery}
+                onChange={(e) => setFabSearchQuery(e.target.value)}
+                placeholder="Search friends..."
+                className="h-11 pl-9 pr-3 rounded-xl border-slate-800 bg-slate-900/60 text-white placeholder-slate-500 focus-visible:ring-indigo-500"
+              />
+            </div>
+
+            <ScrollArea className="h-64 rounded-xl border border-slate-900 bg-slate-950/40 p-2">
+              <div className="flex flex-col gap-1.5">
+                {contacts.filter((c) =>
+                  (c.displayName || c.username).toLowerCase().includes(fabSearchQuery.toLowerCase())
+                ).length === 0 ? (
+                  <p className="text-xs text-slate-500 py-8 text-center italic">
+                    No friends found
+                  </p>
+                ) : (
+                  contacts
+                    .filter((c) =>
+                      (c.displayName || c.username).toLowerCase().includes(fabSearchQuery.toLowerCase())
+                    )
+                    .map((friend) => (
+                      <button
+                        key={friend.id}
+                        onClick={() => {
+                          setShowFabDialog(false)
+                          handleSelectDm(friend.username)
+                        }}
+                        className="flex items-center gap-3 rounded-xl border border-slate-850 bg-slate-900/10 p-2.5 text-left hover:border-slate-800 hover:bg-slate-900/35 transition-all w-full cursor-pointer"
+                      >
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-500/20 text-indigo-400 font-bold text-xs">
+                          {friend.username.charAt(0).toUpperCase()}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="truncate font-semibold text-xs text-slate-200">
+                            {friend.displayName || friend.username}
+                          </p>
+                          <p className="truncate text-[9px] text-slate-500">@{friend.username}</p>
+                        </div>
+                      </button>
+                    ))
+                )}
               </div>
             </ScrollArea>
-          </aside>
-          <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-            <SheetContent side="left" className="w-[280px] border-r border-slate-800 bg-slate-950 p-0 text-slate-100">
-              <SheetHeader className="border-b border-slate-900 p-6">
-                <SheetTitle className="flex items-center gap-2 text-xs font-bold tracking-wider text-slate-500 uppercase">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle></svg>
-                  Active Members
-                </SheetTitle>
-              </SheetHeader>
-              <div className="space-y-2.5 p-5">
-                {users.map((u) => (
-                  <div key={u} className="flex items-center gap-2.5 rounded-xl bg-slate-900/20 px-3 py-2 text-sm text-slate-300">
-                    <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                    <span>{u === user ? `${u} (You)` : u}</span>
-                  </div>
-                ))}
-              </div>
-            </SheetContent>
-          </Sheet>
-          <main className="flex h-full flex-1 flex-col overflow-hidden bg-slate-950/20">
-            {error && (
-              <div className="flex items-center justify-between border-b border-rose-500/20 bg-rose-500/10 px-6 py-2.5 text-xs font-medium text-rose-300">
-                <span className="flex items-center gap-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                  {error}
-                </span>
-                <Button variant="ghost" size="icon" className="h-5 w-5 text-rose-300 hover:bg-rose-500/20 hover:text-white" onClick={() => setError("")}>✕</Button>
-              </div>
-            )}
-            <ScrollArea className="w-full flex-1">
-              <div className="flex flex-col gap-4 p-4 md:p-6">
-                {messages.map((m) => (
-                  <Message key={m.id as string} msg={m} isOwn={m.sender === user} getColor={getColor} />
-                ))}
-                <div ref={endRef} />
-              </div>
-            </ScrollArea>
-            {typingUsers.length > 0 && (
-              <div className="flex items-center gap-2 px-6 py-2 text-xs text-indigo-400 bg-slate-950/40 border-t border-slate-800/40">
-                <span className="flex items-center gap-1">
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400 [animation-delay:-0.3s]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400 [animation-delay:-0.15s]" />
-                  <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-400" />
-                </span>
-                <span>{typingUsers.join(", ")} {typingUsers.length === 1 ? "is" : "are"} typing...</span>
-              </div>
-            )}
-            <div className="flex items-center gap-3 border-t border-slate-800/80 bg-slate-900/10 p-4 backdrop-blur-md">
-              <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="Type a message..." onKeyDown={(e) => e.key === "Enter" && !sending && send()} disabled={sending}
-                className="h-11 rounded-xl border-slate-800 bg-slate-950/60 px-4 text-white placeholder-slate-500 focus-visible:ring-indigo-500" />
-              <Button onClick={send} disabled={sending || !text.trim()}
-                className="h-11 rounded-xl bg-indigo-600 px-5 font-bold text-white shadow-lg shadow-indigo-600/10 hover:bg-indigo-500">
-                {sending ? "..." : <><span className="hidden sm:inline">Send</span><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg></>}
-              </Button>
-            </div>
-          </main>
-        </div>
-        {toastMsg && (
-          <div className="toast-notif">
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg>
-            <span>{toastMsg}</span>
           </div>
-        )}
-        {/* Profile Sheet */}
-        <ProfileSheet authUser={authUser} open={showProfile} onOpenChange={setShowProfile} />
-        {/* Settings Sheet */}
-        <SettingsSheet settingsKey={settingsKey} setSettingsKey={setSettingsKey} handleUpdate={handleUpdateApiKey} loading={settingsLoading} error={settingsError} open={showSettings} onOpenChange={setShowSettings} />
-      </div>
-    )
-  }
+        </DialogContent>
+      </Dialog>
 
-  // === RENDER: WELCOME SCREEN (no room) ===
-  return (
-    <div className="flex h-screen flex-col bg-[#05070a] font-sans text-slate-100">
-      <header className="flex h-16 items-center justify-between border-b border-slate-800/80 bg-slate-950/80 px-4 backdrop-blur-md md:px-6">
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-indigo-500/10 p-1.5 text-indigo-400">
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-          </div>
-          <span className="bg-linear-to-r from-white via-indigo-100 to-indigo-300 bg-clip-text text-sm font-extrabold text-transparent md:text-base">Ada Chat</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Tooltip>
-            <TooltipTrigger render={<button />} className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-900/35 px-2.5 text-xs text-slate-400 hover:bg-slate-900 hover:text-white" onClick={() => setShowProfile(true)}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-              <span className="hidden sm:inline">Profile</span>
-            </TooltipTrigger>
-            <TooltipContent className="border-slate-800 bg-slate-900 text-xs text-slate-300">Profile</TooltipContent>
-          </Tooltip>
-          <Button variant="ghost" size="sm" className="h-8 text-xs text-slate-500 hover:text-slate-300" onClick={onLogout}>Logout</Button>
-        </div>
-      </header>
-      <div className="flex flex-1 items-center justify-center p-8">
-        <div className="max-w-md text-center">
-          <div className="mx-auto mb-6 flex h-20 w-20 items-center justify-center rounded-2xl bg-indigo-500/10">
-            <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" className="text-indigo-400"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
-          </div>
-          <h2 className="mb-2 text-2xl font-extrabold text-white">Welcome to Ada Chat</h2>
-          <p className="mb-8 text-sm text-slate-400">Start a new chat or join an existing room to begin messaging.</p>
-        </div>
-      </div>
-      {/* FAB */}
-      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
-        {fabOpen && (
-          <div className="flex flex-col items-end gap-2 animate-in fade-in slide-in-from-bottom-2 duration-200">
-            <Button size="sm" className="h-11 rounded-xl bg-emerald-600 px-5 font-bold text-white shadow-lg shadow-emerald-600/20 hover:bg-emerald-500" onClick={() => { setShowCreateRoom(true); setGeneratedRoom(genId()); setFabOpen(false) }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mr-2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-              New Room
-            </Button>
-            <Button size="sm" className="h-11 rounded-xl bg-indigo-600 px-5 font-bold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500" onClick={() => { setShowJoinRoom(true); setFabOpen(false) }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mr-2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path><polyline points="10 17 15 12 10 7"></polyline><line x1="15" y1="12" x2="3" y2="12"></line></svg>
-              Join Room
-            </Button>
-            <Button size="sm" variant="outline" className="h-11 rounded-xl border-slate-700 bg-slate-900/60 px-5 font-bold text-slate-300 hover:bg-slate-800 hover:text-white" onClick={() => { setShowFindPin(true); setFabOpen(false) }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="mr-2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-              Find by PIN
-            </Button>
-          </div>
-        )}
-        <button
-          className="flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-2xl shadow-indigo-600/30 transition-all duration-200 hover:bg-indigo-500 hover:scale-105 active:scale-95"
-          onClick={() => setFabOpen(!fabOpen)}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className={`transition-transform duration-200 ${fabOpen ? "rotate-45" : ""}`}><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-        </button>
-      </div>
-      {/* Profile Sheet */}
-      <ProfileSheet authUser={authUser} open={showProfile} onOpenChange={setShowProfile} />
-      {/* Settings Sheet */}
-      <SettingsSheet settingsKey={settingsKey} setSettingsKey={setSettingsKey} handleUpdate={handleUpdateApiKey} loading={settingsLoading} error={settingsError} open={showSettings} onOpenChange={setShowSettings} />
-    </div>
-  )
-}
-
-// --- Profile Sheet Component ---
-function ProfileSheet({ authUser, open, onOpenChange }: { authUser: AuthUser | null; open: boolean; onOpenChange: (v: boolean) => void }) {
-  if (!authUser) return null
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[320px] border-slate-800 bg-slate-950 text-slate-100 sm:w-[380px]">
-        <SheetHeader className="mb-6">
-          <SheetTitle className="text-lg font-extrabold text-white">Profile</SheetTitle>
-        </SheetHeader>
-        <div className="space-y-6">
-          <div className="flex flex-col items-center gap-3">
-            <div className="flex h-20 w-20 items-center justify-center rounded-full bg-indigo-500/20 text-3xl font-extrabold text-indigo-400">
-              {(authUser.displayName || authUser.username).charAt(0).toUpperCase()}
-            </div>
-            <div className="text-center">
-              <p className="text-lg font-bold text-white">{authUser.displayName || authUser.username}</p>
-              <p className="text-xs text-slate-400">@{authUser.username}</p>
-            </div>
-          </div>
-          <div className="rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-            <Label className="text-[10px] font-bold tracking-wider text-indigo-400 uppercase">Your PIN</Label>
-            <p className="mt-1 font-mono text-2xl font-extrabold tracking-widest text-white">{authUser.pin}</p>
-          </div>
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between rounded-lg border border-slate-800/50 px-4 py-3">
-              <span className="text-slate-400">Username</span>
-              <span className="text-white">{authUser.username}</span>
-            </div>
-            <div className="flex justify-between rounded-lg border border-slate-800/50 px-4 py-3">
-              <span className="text-slate-400">Display Name</span>
-              <span className="text-white">{authUser.displayName || "-"}</span>
-            </div>
-            <div className="flex justify-between rounded-lg border border-slate-800/50 px-4 py-3">
-              <span className="text-slate-400">API Key</span>
-              <span className="text-xs text-emerald-400">{authUser.patuihApiKey ? "Configured" : "Not set"}</span>
-            </div>
-          </div>
-        </div>
-      </SheetContent>
-    </Sheet>
-  )
-}
-
-// --- Settings Sheet Component ---
-function SettingsSheet({ settingsKey, setSettingsKey, handleUpdate, loading, error, open, onOpenChange }: {
-  settingsKey: string; setSettingsKey: (v: string) => void; handleUpdate: () => void;
-  loading: boolean; error: string; open: boolean; onOpenChange: (v: boolean) => void
-}) {
-  return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[320px] border-slate-800 bg-slate-950 text-slate-100 sm:w-[380px]">
-        <SheetHeader className="mb-6">
-          <SheetTitle className="text-lg font-extrabold text-white">Settings</SheetTitle>
-          <SheetDescription className="text-slate-400">Update your Patuih API Key</SheetDescription>
-        </SheetHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label className="text-[10px] font-bold tracking-wider text-slate-400 uppercase">API Key</Label>
-            <Input className="h-11 rounded-xl border-slate-800 bg-slate-900/60 text-white placeholder-slate-500" type="password" value={settingsKey} onChange={(e) => setSettingsKey(e.target.value)} placeholder="pk_live_..." />
-          </div>
-          {error && (
-            <Alert variant="destructive" className="rounded-xl border-rose-500/20 bg-rose-500/10 text-rose-400">
-              <AlertDescription className="text-xs font-semibold">{error}</AlertDescription>
-            </Alert>
-          )}
-          <Button className="w-full h-11 rounded-xl bg-indigo-600 font-bold text-white hover:bg-indigo-500" onClick={handleUpdate} disabled={loading || !settingsKey.trim()}>
-            {loading ? "..." : "Update API Key"}
+      {/* Floating Action Button (FAB) for New Chat */}
+      {authUser && (
+        <div className="fixed bottom-6 right-6 z-50">
+          <Button
+            onClick={() => {
+              setFabSearchQuery("")
+              setShowFabDialog(true)
+            }}
+            className="flex h-14 w-14 items-center justify-center rounded-full bg-indigo-600 text-white shadow-xl shadow-indigo-600/35 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer"
+          >
+            <MessageSquare className="h-6 w-6" />
           </Button>
         </div>
-      </SheetContent>
-    </Sheet>
+      )}
+
+      {toastMsg && (
+        <div className="toast-notif">
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+          >
+            <polyline points="20 6 9 17 4 12"></polyline>
+          </svg>
+          <span>{toastMsg}</span>
+        </div>
+      )}
+    </div>
   )
 }
