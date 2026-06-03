@@ -68,3 +68,7 @@
 - App.tsx: AuthUser dihapus patuihApiKey/patuihTenantId, Session dihapus apiKey/tenantId
 - Chat.tsx: AuthUser + Session interface dihapus field API key, semua referensi apiKey/tenantId dibersihkan
 - Lobby.tsx: dihapus form input API Key, Patuih setup, chat_key
+
+## [2026-06-03] Database persistence — load messages from backend
+- Chat.tsx: tambah useEffect fetch GET /api/v1/chat/messages/:roomId on room change
+- Messages dari backend diformat dan di-set ke state messages

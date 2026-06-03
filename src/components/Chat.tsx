@@ -438,6 +438,29 @@ export default function Chat({
     }
   }, [room, user])
 
+  // Load messages from backend on room change
+  useEffect(() => {
+    if (!room) return
+    api
+      .get<Array<{ msgId: string; sender: string; text: string; createdAt: string }>>(
+        `/api/v1/chat/messages/${encodeURIComponent(room)}?limit=50`
+      )
+      .then((msgs) => {
+        if (msgs && msgs.length > 0) {
+          const formatted = msgs.map((m) => ({
+            id: m.msgId,
+            text: m.text,
+            sender: m.sender,
+            type: "received" as const,
+            timestamp: m.createdAt,
+            status: "sent" as const,
+          }))
+          setMessages(formatted)
+        }
+      })
+      .catch(() => {})
+  }, [room])
+
   const handleAutoLeave = useCallback(() => {
     localStorage.removeItem(`chat_messages_room_${room}`)
     localStorage.setItem(
